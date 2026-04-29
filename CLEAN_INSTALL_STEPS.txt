@@ -1,0 +1,75 @@
+╔══════════════════════════════════════════════════════════════╗
+║   STARTUPTN VISITOR MANAGEMENT - CLEAN INSTALLATION         ║
+╚══════════════════════════════════════════════════════════════╝
+
+STEP 1: Create Project Folder
+------------------------------
+Create a folder: C:\startuptn-visitor-system
+
+
+STEP 2: Download These Files
+-----------------------------
+Download ALL files from outputs folder and place in project:
+
+Required Files:
+✓ package.json          → Root folder
+✓ vite.config.js        → Root folder
+✓ index.html            → Root folder
+✓ main.jsx              → src/ folder
+✓ index.css             → src/ folder
+✓ visitor-management.jsx → src/ folder (NEW CLEAN VERSION)
+
+
+STEP 3: Folder Structure
+-------------------------
+Your folder should look like this:
+
+startuptn-visitor-system/
+├── src/
+│   ├── main.jsx
+│   ├── index.css
+│   └── visitor-management.jsx
+├── index.html
+├── package.json
+└── vite.config.js
+
+
+STEP 4: Install Dependencies
+-----------------------------
+Open Command Prompt in the project folder:
+
+cd C:\startuptn-visitor-system
+npm install
+
+
+STEP 5: Run Application
+------------------------
+npm run dev
+
+
+STEP 6: Open Browser
+---------------------
+Terminal will show: http://localhost:XXXX
+Copy that EXACT URL and open in browser
+
+
+STEP 7: Login as Admin
+-----------------------
+Username: admin
+Password: startuptn@2024
+
+
+╔══════════════════════════════════════════════════════════════╗
+║                      THAT'S IT!                              ║
+║              Application is now running!                     ║
+╚══════════════════════════════════════════════════════════════╝
+
+Common Issues:
+--------------
+❌ "Cannot find module" → Run: npm install
+❌ Port in use → Use the port shown in YOUR terminal
+❌ localhost 404 → Make sure npm run dev is still running
+
+Need Help?
+----------
+Check DEPLOYMENT_GUIDE.md for detailed troubleshooting

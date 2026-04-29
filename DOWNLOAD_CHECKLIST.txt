@@ -1,0 +1,123 @@
+╔══════════════════════════════════════════════════════════════╗
+║          DOWNLOAD CHECKLIST - ALL REQUIRED FILES             ║
+╚══════════════════════════════════════════════════════════════╝
+
+DOWNLOAD THESE 7 FILES FROM OUTPUTS FOLDER:
+--------------------------------------------
+
+ROOT FOLDER FILES (Download to project root):
+□ package.json
+□ vite.config.js
+□ index.html
+
+SRC FOLDER FILES (Download and put in src/ subfolder):
+□ main.jsx
+□ index.css
+□ visitor-management.jsx
+
+DOCUMENTATION (Optional but helpful):
+□ CLEAN_INSTALL_STEPS.txt
+
+╔══════════════════════════════════════════════════════════════╗
+║                  FOLDER STRUCTURE                            ║
+╚══════════════════════════════════════════════════════════════╝
+
+After downloading, your folder should look like this:
+
+C:\startuptn-visitor-system\
+├── src\
+│   ├── main.jsx              ← Downloaded
+│   ├── index.css             ← Downloaded
+│   └── visitor-management.jsx ← Downloaded
+├── package.json              ← Downloaded
+├── vite.config.js            ← Downloaded
+└── index.html                ← Downloaded
+
+╔══════════════════════════════════════════════════════════════╗
+║                  INSTALLATION STEPS                          ║
+╚══════════════════════════════════════════════════════════════╝
+
+STEP 1: Create the folder structure
+------------------------------------
+1. Create folder: C:\startuptn-visitor-system
+2. Inside it, create subfolder: src
+
+STEP 2: Place downloaded files
+-------------------------------
+1. Put package.json, vite.config.js, index.html in ROOT folder
+2. Put main.jsx, index.css, visitor-management.jsx in SRC folder
+
+STEP 3: Install dependencies
+-----------------------------
+Open Command Prompt in C:\startuptn-visitor-system
+
+Run:
+cd C:\startuptn-visitor-system
+npm install
+
+(This will take 1-2 minutes)
+
+STEP 4: Run the application
+----------------------------
+npm run dev
+
+STEP 5: Open in browser
+------------------------
+Terminal will show something like:
+  ➜  Local:   http://localhost:5173/
+
+Copy that EXACT URL and paste in your browser
+
+╔══════════════════════════════════════════════════════════════╗
+║                  LOGIN CREDENTIALS                           ║
+╚══════════════════════════════════════════════════════════════╝
+
+Admin Login:
+Username: admin
+Password: startuptn@2024
+
+╔══════════════════════════════════════════════════════════════╗
+║                  FEATURES INCLUDED                           ║
+╚══════════════════════════════════════════════════════════════╝
+
+✓ Home dashboard
+✓ Visitor registration form
+✓ Admin login with authentication
+✓ Admin dashboard
+✓ Add visitors manually (for those who can't self-register)
+✓ View all visitor records
+✓ Edit visitor information
+✓ Delete visitor records
+✓ Export visitor data as CSV
+✓ Real-time visitor count
+✓ Responsive design
+
+╔══════════════════════════════════════════════════════════════╗
+║                  TROUBLESHOOTING                             ║
+╚══════════════════════════════════════════════════════════════╝
+
+Problem: "Cannot find module"
+Solution: Make sure you ran "npm install"
+
+Problem: "Failed to load /src/main.jsx"
+Solution: Check that main.jsx is inside the src/ folder
+
+Problem: Port already in use
+Solution: Close other terminals and run "npm run dev" again
+
+Problem: Localhost 404
+Solution: Make sure npm run dev is running and use the exact URL shown
+
+╔══════════════════════════════════════════════════════════════╗
+║                  NEXT STEPS AFTER SUCCESS                    ║
+╚══════════════════════════════════════════════════════════════╝
+
+Once working locally:
+1. Test all features
+2. Deploy to Vercel/Netlify (see DEPLOYMENT_GUIDE.md)
+3. Generate QR code with your deployment URL
+4. Print and display QR code at reception
+
+═══════════════════════════════════════════════════════════════
+
+Questions? Check DEPLOYMENT_GUIDE.md for detailed instructions.
