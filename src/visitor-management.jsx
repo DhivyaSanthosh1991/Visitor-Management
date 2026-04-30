@@ -872,11 +872,11 @@ const VisitorManagementSystem = () => {
       <form onSubmit={login}>
         <div style={{ marginBottom: '1.5rem' }}>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Username</label>
-          <input type="text" value={loginData.user} onChange={(e) => setLoginData({ ...loginData, user: e.target.value })} required style={inp} placeholder="admin" />
+          <input type="text" value={loginData.user} onChange={(e) => setLoginData({ ...loginData, user: e.target.value })} required style={inp} placeholder=" " />
         </div>
         <div style={{ marginBottom: '2rem' }}>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Password</label>
-          <input type="password" value={loginData.pass} onChange={(e) => setLoginData({ ...loginData, pass: e.target.value })} required style={inp} placeholder="startuptn@2024" />
+          <input type="password" value={loginData.pass} onChange={(e) => setLoginData({ ...loginData, pass: e.target.value })} required style={inp} placeholder=" " />
         </div>
         <button type="submit" style={{ ...btn, width: '100%' }}>Login</button>
       </form>
