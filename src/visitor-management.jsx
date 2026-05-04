@@ -175,7 +175,7 @@ const pricingData = {
     } catch (error) {
       console.error('Logout error:', error);
     }
-  }; } };
+  };
   
  const submitV = async (e) => { 
     e.preventDefault(); 
