@@ -23,7 +23,7 @@ const VisitorManagementSystem = () => {
   const [bookings, setBookings] = useState([]);
   const [coworking, setCoworking] = useState([]);
   
-  const [vForm, setVForm] = useState({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', To Meet: '', accompanying: [] });
+  const [vForm, setVForm] = useState({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', Host: '', accompanying: [] });
   const [eForm, setEForm] = useState({ eventName: '', organizer: '', partner: '', type: '', date: '', start: '', end: '', venue: '', desc: '', max: '' });
   const [hForm, setHForm] = useState({ name: '', capacity: '', avail: 'available' });
   const [bForm, setBForm] = useState({ 
@@ -200,7 +200,7 @@ const pricingData = {
         setVisitors([...visitors, newVisitor]);
       }
       
-      setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', To Meet: '', accompanying: [] }); 
+      setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', Host: '', accompanying: [] }); 
       setEditV(null); 
       
       if (!isAdmin) { 
@@ -613,8 +613,8 @@ const pricingData = {
         <input type="text" value={vForm.purpose} onChange={(e) => setVForm({ ...vForm, purpose: e.target.value })} required style={inp} />
       </div>
       <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>To Meet *</label>
-        <input type="text" value={vForm.To Meet} onChange={(e) => setVForm({ ...vForm, To Meet: e.target.value })} required style={inp} />
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Host *</label>
+        <input type="text" value={vForm.Host} onChange={(e) => setVForm({ ...vForm, Host: e.target.value })} required style={inp} />
       </div>
       
       <div style={{ gridColumn: '1 / -1', marginTop: '1rem', padding: '1rem', background: '#f3f4f6', borderRadius: '8px' }}>
@@ -1124,7 +1124,7 @@ const pricingData = {
     </div>
     <h3 style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '2rem' }}>{editV ? 'Edit' : 'Add'} Visitor</h3>
     <form onSubmit={submitV} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-      {['name', 'email', 'company', 'purpose', 'To Meet'].map(f => (
+      {['name', 'email', 'company', 'purpose', 'Host'].map(f => (
         <input key={f} type={f === 'email' ? 'email' : 'text'} placeholder={f.charAt(0).toUpperCase() + f.slice(1)} value={vForm[f]} onChange={(e) => setVForm({ ...vForm, [f]: e.target.value })} required style={inp} />
       ))}
       <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.5rem' }}>
@@ -1147,7 +1147,7 @@ const pricingData = {
         />
       </div>
       <button type="submit" style={{ ...btn, gridColumn: '1 / -1' }}>{editV ? 'Update' : 'Add'} Visitor</button>
-      {editV && <button type="button" onClick={() => { setEditV(null); setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', To Meet: '', accompanying: [] }); }} style={{ ...btn, gridColumn: '1 / -1', background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>}
+      {editV && <button type="button" onClick={() => { setEditV(null); setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', Host: '', accompanying: [] }); }} style={{ ...btn, gridColumn: '1 / -1', background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>}
     </form>
     <h3 style={{ color: '#2B4C7E', fontWeight: '600' }}>All Visitors ({visitors.length})</h3>
     {visitors.length > 0 ? (
@@ -1168,7 +1168,7 @@ const pricingData = {
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.company}</td>
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.purpose}</td>
                 <td style={{ padding: '0.75rem' }}>
-                  <button onClick={() => { setEditV(v); setVForm({ name: v.name, email: v.email, phone: v.phone, countryCode: v.countryCode || '+91', company: v.company, purpose: v.purpose, To Meet: v.To Meet, accompanying: v.accompanying || [] }); }} style={{ padding: '0.5rem', marginRight: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={16} /></button>
+                  <button onClick={() => { setEditV(v); setVForm({ name: v.name, email: v.email, phone: v.phone, countryCode: v.countryCode || '+91', company: v.company, purpose: v.purpose, Host: v.Host, accompanying: v.accompanying || [] }); }} style={{ padding: '0.5rem', marginRight: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={16} /></button>
                   <button onClick={async () => { 
   if (confirm('Delete?')) {
     try {
