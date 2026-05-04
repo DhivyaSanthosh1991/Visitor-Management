@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Calendar, Download, Edit2, Trash2, CheckCircle, XCircle, Building, LogOut, MapPin, Mail, Phone, Briefcase, Plus, Minus } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { auth } from './firebase';
+import {
+  getVisitors, addVisitor, updateVisitor, deleteVisitor,
+  getEvents, addEvent, updateEvent, deleteEvent,
+  getHalls, addHall, updateHall, deleteHall,
+  getBookings, addBooking, updateBooking as updateBookingFirebase, deleteBooking,
+  getCoworking, addCoworking, updateCoworking as updateCoworkingFirebase, deleteCoworking
+} from './firebaseUtils';
 
 const VisitorManagementSystem = () => {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -112,55 +121,99 @@ const pricingData = {
   ],
   note: "All rates are excluding GST"
 };
+ // Load data from Firebase
   useEffect(() => {
-    try {
-      const v = localStorage.getItem('visitors');
-      const e = localStorage.getItem('events');
-      const h = localStorage.getItem('halls');
-      const b = localStorage.getItem('bookings');
-      const c = localStorage.getItem('coworking');
-      
-      if (v) setVisitors(JSON.parse(v));
-      if (e) setEvents(JSON.parse(e));
-      if (h) setHalls(JSON.parse(h));
-      if (b) setBookings(JSON.parse(b));
-      if (c) setCoworking(JSON.parse(c));
-    } catch (err) {
-      console.error('Error loading:', err);
-    }
+    const loadData = async () => {
+      try {
+        const [visitorsData, eventsData, hallsData, bookingsData, coworkingData] = await Promise.all([
+          getVisitors(),
+          getEvents(),
+          getHalls(),
+          getBookings(),
+          getCoworking()
+        ]);
+        
+        setVisitors(visitorsData);
+        setEvents(eventsData);
+        setHalls(hallsData);
+        setBookings(bookingsData);
+        setCoworking(coworkingData);
+      } catch (err) {
+        console.error('Error loading from Firebase:', err);
+      }
+    };
+    
+    loadData();
   }, []);
+
+  // Monitor authentication state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setIsAdmin(!!user);
+    });
+    return () => unsubscribe();
+  }, []);  
+   
+ const login = async (e) => {
+    e.preventDefault();
+    try {
+      await signInWithEmailAndPassword(auth, loginData.user, loginData.pass);
+      setIsAdmin(true);
+      setTab('admin-v');
+      setLoginData({ user: '', pass: '' });
+    } catch (error) {
+      console.error('Login error:', error);
+      alert('Invalid credentials! Use: admin@startuptn.in');
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      setIsAdmin(false);
+      setTab('home');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  }; } };
   
-  const saveV = (d) => { try { localStorage.setItem('visitors', JSON.stringify(d)); setVisitors(d); } catch (err) { console.error('Error:', err); alert('Error saving!'); } };
-  const saveE = (d) => { try { localStorage.setItem('events', JSON.stringify(d)); setEvents(d); } catch (err) { console.error('Error:', err); alert('Error saving!'); } };
-  const saveH = (d) => { try { localStorage.setItem('halls', JSON.stringify(d)); setHalls(d); } catch (err) { console.error('Error:', err); alert('Error saving!'); } };
-  const saveB = (d) => { try { localStorage.setItem('bookings', JSON.stringify(d)); setBookings(d); } catch (err) { console.error('Error:', err); alert('Error saving!'); } };
-  const saveC = (d) => { try { localStorage.setItem('coworking', JSON.stringify(d)); setCoworking(d); } catch (err) { console.error('Error:', err); alert('Error saving!'); } };
-  
-  const login = (e) => { e.preventDefault(); if (loginData.user === 'admin' && loginData.pass === 'startuptn@2026') { setIsAdmin(true); setTab('admin-v'); setLoginData({ user: '', pass: '' }); } else { alert('Invalid!'); } };
-  
-  const submitV = (e) => { 
+ const submitV = async (e) => { 
     e.preventDefault(); 
     if (!validatePhone(vForm.phone, vForm.countryCode)) {
       alert('Please enter a valid 10-digit mobile number');
       return;
     }
-    const v = { 
-      id: editV?.id || generateId('V', visitors), 
-      ...vForm, 
-      fullPhone: vForm.countryCode + vForm.phone,
-      time: editV?.time || new Date().toLocaleString() 
-    }; 
-    const up = editV ? visitors.map(x => x.id === editV.id ? v : x) : [...visitors, v]; 
-    saveV(up); 
-    setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', host: '', accompanying: [] }); 
-    setEditV(null); 
-    if (!isAdmin) { 
-      alert('Registered! Your Visitor ID: ' + v.id); 
-      setTab('home'); 
-    } 
+    
+    try {
+      const v = { 
+        id: editV?.id || generateId('V', visitors), 
+        ...vForm, 
+        fullPhone: vForm.countryCode + vForm.phone,
+        time: editV?.time || new Date().toLocaleString() 
+      };
+      
+      if (editV) {
+        await updateVisitor(editV.firebaseId, v);
+        setVisitors(visitors.map(x => x.firebaseId === editV.firebaseId ? { ...v, firebaseId: editV.firebaseId } : x));
+      } else {
+        const newVisitor = await addVisitor(v);
+        setVisitors([...visitors, newVisitor]);
+      }
+      
+      setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', host: '', accompanying: [] }); 
+      setEditV(null); 
+      
+      if (!isAdmin) { 
+        alert('Registered! Your Visitor ID: ' + v.id); 
+        setTab('home'); 
+      }
+    } catch (error) {
+      console.error('Error saving visitor:', error);
+      alert('Error saving visitor!');
+    }
   };
   
-  const submitE = (e) => { 
+ const submitE = async (e) => { 
     e.preventDefault(); 
     const eventDate = new Date(eForm.date);
     const today = new Date();
@@ -171,34 +224,59 @@ const pricingData = {
       return;
     }
     
-    const ev = { 
-      id: editE?.id || generateId('E', events), 
-      ...eForm, 
-      regs: editE?.regs || [], 
-      created: editE?.created || new Date().toLocaleString() 
-    }; 
-    const up = editE ? events.map(x => x.id === editE.id ? ev : x) : [...events, ev]; 
-    saveE(up); 
-    setEForm({ eventName: '', organizer: '', partner: '', type: '', date: '', start: '', end: '', venue: '', desc: '', max: '' }); 
-    setEditE(null); 
-    alert('Event saved! Event ID: ' + ev.id); 
+    try {
+      const ev = { 
+        id: editE?.id || generateId('E', events), 
+        ...eForm, 
+        regs: editE?.regs || [], 
+        created: editE?.created || new Date().toLocaleString() 
+      };
+      
+      if (editE) {
+        await updateEvent(editE.firebaseId, ev);
+        setEvents(events.map(x => x.firebaseId === editE.firebaseId ? { ...ev, firebaseId: editE.firebaseId } : x));
+      } else {
+        const newEvent = await addEvent(ev);
+        setEvents([...events, newEvent]);
+      }
+      
+      setEForm({ eventName: '', organizer: '', partner: '', type: '', date: '', start: '', end: '', venue: '', desc: '', max: '' }); 
+      setEditE(null); 
+      alert('Event saved! Event ID: ' + ev.id);
+    } catch (error) {
+      console.error('Error saving event:', error);
+      alert('Error saving event!');
+    }
   };
   
-  const submitH = (e) => { 
+  const submitH = async (e) => { 
     e.preventDefault(); 
-    const h = { 
-      id: editH?.id || generateId('H', halls), 
-      ...hForm, 
-      created: editH?.created || new Date().toLocaleString() 
-    }; 
-    const up = editH ? halls.map(x => x.id === editH.id ? h : x) : [...halls, h]; 
-    saveH(up); 
-    setHForm({ name: '', capacity: '', facilities: '', rate: '', location: '', avail: 'available' }); 
-    setEditH(null); 
-    alert('Hall saved! Hall ID: ' + h.id); 
+    
+    try {
+      const h = { 
+        id: editH?.id || generateId('H', halls), 
+        ...hForm, 
+        created: editH?.created || new Date().toLocaleString() 
+      };
+      
+      if (editH) {
+        await updateHall(editH.firebaseId, h);
+        setHalls(halls.map(x => x.firebaseId === editH.firebaseId ? { ...h, firebaseId: editH.firebaseId } : x));
+      } else {
+        const newHall = await addHall(h);
+        setHalls([...halls, newHall]);
+      }
+      
+      setHForm({ name: '', capacity: '', facilities: '', rate: '', location: '', avail: 'available' }); 
+      setEditH(null); 
+      alert('Hall saved! Hall ID: ' + h.id);
+    } catch (error) {
+      console.error('Error saving hall:', error);
+      alert('Error saving hall!');
+    }
   };
   
-  const submitB = (e) => { 
+  const submitB = async (e) => { 
     e.preventDefault(); 
     const bookingDate = new Date(bForm.date);
     const today = new Date();
@@ -214,20 +292,28 @@ const pricingData = {
       return;
     }
     
-    const b = { 
-      id: generateId('B', bookings), 
-      ...bForm, 
-      fullPhone: bForm.countryCode + bForm.phone,
-      status: 'pending', 
-      submitted: new Date().toLocaleString() 
-    }; 
-    saveB([...bookings, b]); 
-    setBForm({ hallId: '', hallName: '', organizerName: '', email: '', phone: '', countryCode: '+91', organization: '', purpose: '', date: '', start: '', end: '', attendees: '', req: '' }); 
-    alert('Booking submitted! Booking ID: ' + b.id); 
-    setTab('home'); 
+    try {
+      const b = { 
+        id: generateId('B', bookings), 
+        ...bForm, 
+        fullPhone: bForm.countryCode + bForm.phone,
+        status: 'pending', 
+        submitted: new Date().toLocaleString() 
+      };
+      
+      const newBooking = await addBooking(b);
+      setBookings([...bookings, newBooking]);
+      
+      setBForm({ hallId: '', hallName: '', organizerName: '', email: '', phone: '', countryCode: '+91', organization: '', purpose: '', date: '', start: '', end: '', attendees: '', req: '' }); 
+      alert('Booking submitted! Booking ID: ' + b.id); 
+      setTab('home');
+    } catch (error) {
+      console.error('Error submitting booking:', error);
+      alert('Error submitting booking!');
+    }
   };
-  
-  const submitC = (e) => { 
+
+  const submitC = async (e) => { 
     e.preventDefault(); 
     const startDate = new Date(cForm.startDate);
     const today = new Date();
@@ -243,75 +329,130 @@ const pricingData = {
       return;
     }
     
-    const c = { 
-      id: generateId('C', coworking), 
-      ...cForm, 
-      fullPhone: cForm.countryCode + cForm.phone,
-      status: 'pending', 
-      submitted: new Date().toLocaleString() 
-    }; 
-    saveC([...coworking, c]); 
-    setCForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', seats: '', duration: '', startDate: '', purpose: '' }); 
-    alert('Request submitted! Coworking ID: ' + c.id); 
-    setTab('home'); 
+    try {
+      const c = { 
+        id: generateId('C', coworking), 
+        ...cForm, 
+        fullPhone: cForm.countryCode + cForm.phone,
+        status: 'pending', 
+        submitted: new Date().toLocaleString() 
+      };
+      
+      const newCoworking = await addCoworking(c);
+      setCoworking([...coworking, newCoworking]);
+      
+      setCForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', seats: '', duration: '', startDate: '', purpose: '' }); 
+      alert('Request submitted! Coworking ID: ' + c.id); 
+      setTab('home');
+    } catch (error) {
+      console.error('Error submitting coworking:', error);
+      alert('Error submitting coworking!');
+    }
   };
   
-  const submitReg = (e) => { 
+ const submitReg = async (e) => { 
     e.preventDefault(); 
     if (!validatePhone(regForm.phone, regForm.countryCode)) {
       alert('Please enter a valid 10-digit mobile number');
       return;
     }
-    const r = { 
-      id: Date.now().toString(), 
-      ...regForm, 
-      fullPhone: regForm.countryCode + regForm.phone,
-      time: new Date().toLocaleString() 
-    }; 
-    const up = events.map(ev => ev.id === regForm.eventId ? { ...ev, regs: [...(ev.regs || []), r] } : ev); 
-    saveE(up); 
-    setRegForm({ eventId: '', name: '', email: '', phone: '', countryCode: '+91', company: '', designation: '', accompanying: [] }); 
-    alert('Registered!'); 
-    setTab('home'); 
+    
+    try {
+      const r = { 
+        id: Date.now().toString(), 
+        ...regForm, 
+        fullPhone: regForm.countryCode + regForm.phone,
+        time: new Date().toLocaleString() 
+      };
+      
+      const event = events.find(ev => ev.id === regForm.eventId);
+      if (!event) {
+        alert('Event not found!');
+        return;
+      }
+      
+      const updatedEvent = {
+        ...event,
+        regs: [...(event.regs || []), r]
+      };
+      
+      await updateEvent(event.firebaseId, updatedEvent);
+      setEvents(events.map(ev => ev.firebaseId === event.firebaseId ? updatedEvent : ev));
+      
+      setRegForm({ eventId: '', name: '', email: '', phone: '', countryCode: '+91', company: '', designation: '', accompanying: [] }); 
+      alert('Registered!'); 
+      setTab('home');
+    } catch (error) {
+      console.error('Error registering for event:', error);
+      alert('Error registering for event!');
+    }
   };
   
   const sendEmail = (to, subject, body) => {
     setEmailModal({ to, subject, body });
   };
   
-  const updateBooking = (id, status, msg = '') => { 
-    const booking = bookings.find(b => b.id === id);
-    const up = bookings.map(b => b.id === id ? { ...b, status, msg, reviewed: new Date().toLocaleString() } : b); 
-    saveB(up); 
-    
-    if (booking && status !== 'pending') {
-      const subject = status === 'approved' 
-        ? `Hall Booking Approved - ${booking.hallName}` 
-        : `Hall Booking Update - ${booking.hallName}`;
+ const updateBooking = async (id, status, msg = '') => { 
+    try {
+      const booking = bookings.find(b => b.id === id);
+      if (!booking) return;
       
-      const body = status === 'approved'
-        ? `Dear ${booking.organizerName},\n\nYour hall booking request has been APPROVED!\n\nBooking ID: ${booking.id}\n\nDetails:\n- Hall: ${booking.hallName}\n- Date: ${booking.date}\n- Time: ${booking.start} - ${booking.end}\n- Attendees: ${booking.attendees}\n${booking.req ? `\nSpecial Requirements:\n${booking.req}\n` : ''}\n${msg ? `\nAdmin Message: ${msg}\n` : ''}\nPlease contact us if you have any questions.\n\nBest regards,\nStartupTN Team`
-        : `Dear ${booking.organizerName},\n\nYour hall booking request has been reviewed.\n\nBooking ID: ${booking.id}\nStatus: ${status.toUpperCase()}\n${booking.req ? `\nYour Requirements:\n${booking.req}\n` : ''}\n${msg ? `\nReason: ${msg}\n` : ''}\nBest regards,\nStartupTN Team`;
+      const updatedBooking = {
+        ...booking,
+        status,
+        msg,
+        reviewed: new Date().toLocaleString()
+      };
       
-      sendEmail(booking.email, subject, body);
+      await updateBookingFirebase(booking.firebaseId, updatedBooking);
+      setBookings(bookings.map(b => b.firebaseId === booking.firebaseId ? updatedBooking : b));
+      
+      if (status !== 'pending') {
+        const subject = status === 'approved' 
+          ? `Hall Booking Approved - ${booking.hallName}` 
+          : `Hall Booking Update - ${booking.hallName}`;
+        
+        const body = status === 'approved'
+          ? `Dear ${booking.organizerName},\n\nYour hall booking request has been APPROVED!\n\nBooking ID: ${booking.id}\n\nDetails:\n- Hall: ${booking.hallName}\n- Date: ${booking.date}\n- Time: ${booking.start} - ${booking.end}\n- Attendees: ${booking.attendees}\n${booking.req ? `\nSpecial Requirements:\n${booking.req}\n` : ''}\n${msg ? `\nAdmin Message: ${msg}\n` : ''}\nPlease contact us if you have any questions.\n\nBest regards,\nStartupTN Team`
+          : `Dear ${booking.organizerName},\n\nYour hall booking request has been reviewed.\n\nBooking ID: ${booking.id}\nStatus: ${status.toUpperCase()}\n${booking.req ? `\nYour Requirements:\n${booking.req}\n` : ''}\n${msg ? `\nReason: ${msg}\n` : ''}\nBest regards,\nStartupTN Team`;
+        
+        sendEmail(booking.email, subject, body);
+      }
+    } catch (error) {
+      console.error('Error updating booking:', error);
+      alert('Error updating booking!');
     }
   };
   
-  const updateCowork = (id, status, msg = '') => { 
-    const request = coworking.find(c => c.id === id);
-    const up = coworking.map(c => c.id === id ? { ...c, status, msg, reviewed: new Date().toLocaleString() } : c); 
-    saveC(up); 
-    
-    if (request && status !== 'pending') {
-      const subject = status === 'approved' 
-        ? `Coworking Space Approved - StartupTN` 
-        : `Coworking Space Request Update - StartupTN`;
+  const updateCowork = async (id, status, msg = '') => { 
+    try {
+      const request = coworking.find(c => c.id === id);
+      if (!request) return;
       
-      const body = status === 'approved'
-        ? `Dear ${request.name},\n\nYour coworking space request has been APPROVED!\n\nCoworking ID: ${request.id}\n\nDetails:\n- Seats: ${request.seats}\n- Duration: ${request.duration}\n- Start Date: ${request.startDate}\n- Company: ${request.company}\n\n${msg ? `Admin Message: ${msg}\n\n` : ''}We look forward to welcoming you to StartupTN!\n\nBest regards,\nStartupTN Team`
-        : `Dear ${request.name},\n\nYour coworking space request has been reviewed.\n\nCoworking ID: ${request.id}\n\nDetails:\n- Status: ${status.toUpperCase()}\n- Seats Requested: ${request.seats}\n- Duration: ${request.duration}\n\n${msg ? `Reason: ${msg}\n\n` : ''}Please contact us if you have any questions.\n\nBest regards,\nStartupTN Team`;
+      const updatedCoworking = {
+        ...request,
+        status,
+        msg,
+        reviewed: new Date().toLocaleString()
+      };
       
-      sendEmail(request.email, subject, body);
+      await updateCoworkingFirebase(request.firebaseId, updatedCoworking);
+      setCoworking(coworking.map(c => c.firebaseId === request.firebaseId ? updatedCoworking : c));
+      
+      if (status !== 'pending') {
+        const subject = status === 'approved' 
+          ? `Coworking Space Approved - StartupTN` 
+          : `Coworking Space Request Update - StartupTN`;
+        
+        const body = status === 'approved'
+          ? `Dear ${request.name},\n\nYour coworking space request has been APPROVED!\n\nCoworking ID: ${request.id}\n\nDetails:\n- Seats: ${request.seats}\n- Duration: ${request.duration}\n- Start Date: ${request.startDate}\n- Company: ${request.company}\n\n${msg ? `Admin Message: ${msg}\n\n` : ''}We look forward to welcoming you to StartupTN!\n\nBest regards,\nStartupTN Team`
+          : `Dear ${request.name},\n\nYour coworking space request has been reviewed.\n\nCoworking ID: ${request.id}\n\nDetails:\n- Status: ${status.toUpperCase()}\n- Seats Requested: ${request.seats}\n- Duration: ${request.duration}\n\n${msg ? `Reason: ${msg}\n\n` : ''}Please contact us if you have any questions.\n\nBest regards,\nStartupTN Team`;
+        
+        sendEmail(request.email, subject, body);
+      }
+    } catch (error) {
+      console.error('Error updating coworking:', error);
+      alert('Error updating coworking!');
     }
   };
   
@@ -359,7 +500,7 @@ const pricingData = {
             <img src="/StartupTN_logo.png" alt="StartupTN Logo" style={{ height: '50px', width: 'auto' }} />
             <h1 style={{ margin: 0, fontSize: '1.8rem', fontWeight: '700', color: '#ffffff' }}>Visitor Management</h1>
           </div>
-          {isAdmin && <button onClick={() => { setIsAdmin(false); setTab('home'); }} style={{ padding: '0.5rem 1rem', background: '#ffffff', color: '#2B4C7E', fontWeight: '600', border: '2px solid #F5A623', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><LogOut size={18} /> Logout</button>}
+         {isAdmin && <button onClick={logout} style={{ padding: '0.5rem 1rem', background: '#ffffff', color: '#2B4C7E', fontWeight: '600', border: '2px solid #F5A623', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><LogOut size={18} /> Logout</button>}
         </div>
       </div>
 
@@ -1028,7 +1169,17 @@ const pricingData = {
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.purpose}</td>
                 <td style={{ padding: '0.75rem' }}>
                   <button onClick={() => { setEditV(v); setVForm({ name: v.name, email: v.email, phone: v.phone, countryCode: v.countryCode || '+91', company: v.company, purpose: v.purpose, host: v.host, accompanying: v.accompanying || [] }); }} style={{ padding: '0.5rem', marginRight: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={16} /></button>
-                  <button onClick={() => { if (confirm('Delete?')) saveV(visitors.filter(x => x.id !== v.id)); }} style={{ padding: '0.5rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Trash2 size={16} /></button>
+                  <button onClick={async () => { 
+  if (confirm('Delete?')) {
+    try {
+      await deleteVisitor(v.firebaseId);
+      setVisitors(visitors.filter(x => x.firebaseId !== v.firebaseId));
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Error deleting!');
+    }
+  }
+}} style={{ padding: '0.5rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Trash2 size={16} /></button>
                 </td>
               </tr>
             ))}
@@ -1078,7 +1229,17 @@ const pricingData = {
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', height: 'fit-content' }}>
             <button onClick={() => { setEditE(e); setEForm({ eventName: e.eventName, organizer: e.organizer, partner: e.partner, type: e.type, date: e.date, start: e.start, end: e.end, venue: e.venue, desc: e.desc, max: e.max }); }} style={{ padding: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={18} /></button>
-            <button onClick={() => { if (confirm('Delete?')) saveE(events.filter(x => x.id !== e.id)); }} style={{ padding: '0.5rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Trash2 size={18} /></button>
+            <button onClick={async () => { 
+  if (confirm('Delete?')) {
+    try {
+      await deleteEvent(e.firebaseId);
+      setEvents(events.filter(x => x.firebaseId !== e.firebaseId));
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Error deleting!');
+    }
+  }
+}} style={{ padding: '0.5rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Trash2 size={18} /></button>
             {e.regs?.length > 0 && <button onClick={() => exportToExcel(e.regs.map(r => ({ ...r, event: e.eventName })), `${e.eventName}_registrations`)} style={{ padding: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Download size={18} /></button>}
           </div>
         </div>
@@ -1154,7 +1315,17 @@ const pricingData = {
                 </td>
                 <td style={{ padding: '0.75rem' }}>
                   <button onClick={() => { setEditH(h); setHForm({ name: h.name, capacity: h.capacity, facilities: h.facilities, rate: h.rate, location: h.location, avail: h.avail }); }} style={{ padding: '0.5rem', marginRight: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={16} /></button>
-                  <button onClick={() => { if (confirm('Delete?')) saveH(halls.filter(x => x.id !== h.id)); }} style={{ padding: '0.5rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Trash2 size={16} /></button>
+                  <button onClick={async () => { 
+  if (confirm('Delete?')) {
+    try {
+      await deleteHall(h.firebaseId);
+      setHalls(halls.filter(x => x.firebaseId !== h.firebaseId));
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Error deleting!');
+    }
+  }
+}} style={{ padding: '0.5rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Trash2 size={16} /></button>
                 </td>
               </tr>
             ))}
@@ -1203,7 +1374,17 @@ const pricingData = {
           <div style={{ display: 'flex', gap: '1rem' }}>
             <button onClick={() => { const m = prompt('Approval message (optional):'); if (m !== null) updateBooking(b.id, 'approved', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(13, 140, 79, 0.1)', color: '#059669', border: '2px solid #059669', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><CheckCircle size={18} style={{ verticalAlign: 'middle' }} /> Approve</button>
             <button onClick={() => { const m = prompt('Rejection reason:'); if (m) updateBooking(b.id, 'rejected', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: '2px solid #dc2626', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><XCircle size={18} style={{ verticalAlign: 'middle' }} /> Reject</button>
-            <button onClick={() => { if (confirm('Delete?')) saveB(bookings.filter(x => x.id !== b.id)); }} style={{ padding: '0.75rem 1rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Trash2 size={18} /></button>
+            <button onClick={async () => { 
+  if (confirm('Delete?')) {
+    try {
+      await deleteBooking(b.firebaseId);
+      setBookings(bookings.filter(x => x.firebaseId !== b.firebaseId));
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Error deleting!');
+    }
+  }
+}} style={{ padding: '0.75rem 1rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Trash2 size={18} /></button>
           </div>
         )}
       </div>
@@ -1249,7 +1430,17 @@ const pricingData = {
           <div style={{ display: 'flex', gap: '1rem' }}>
             <button onClick={() => { const m = prompt('Approval message (optional):'); if (m !== null) updateCowork(c.id, 'approved', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(13, 140, 79, 0.1)', color: '#059669', border: '2px solid #059669', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><CheckCircle size={18} style={{ verticalAlign: 'middle' }} /> Approve</button>
             <button onClick={() => { const m = prompt('Rejection reason:'); if (m) updateCowork(c.id, 'rejected', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: '2px solid #dc2626', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><XCircle size={18} style={{ verticalAlign: 'middle' }} /> Reject</button>
-            <button onClick={() => { if (confirm('Delete?')) saveC(coworking.filter(x => x.id !== c.id)); }} style={{ padding: '0.75rem 1rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Trash2 size={18} /></button>
+            <button onClick={async () => { 
+  if (confirm('Delete?')) {
+    try {
+      await deleteCoworking(c.firebaseId);
+      setCoworking(coworking.filter(x => x.firebaseId !== c.firebaseId));
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Error deleting!');
+    }
+  }
+}} style={{ padding: '0.75rem 1rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Trash2 size={18} /></button>
           </div>
         )}
       </div>
