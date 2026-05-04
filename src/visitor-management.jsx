@@ -25,7 +25,7 @@ const VisitorManagementSystem = () => {
   
   const [vForm, setVForm] = useState({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', host: '', accompanying: [] });
   const [eForm, setEForm] = useState({ eventName: '', organizer: '', partner: '', type: '', date: '', start: '', end: '', venue: '', desc: '', max: '' });
-  const [hForm, setHForm] = useState({ name: '', capacity: '', facilities: '', rate: '', location: '', avail: 'available' });
+  const [hForm, setHForm] = useState({ name: '', capacity: '', avail: 'available' });
   const [bForm, setBForm] = useState({ 
     hallId: '', hallName: '', organizerName: '', email: '', 
     phone: '', countryCode: '+91', organization: '', purpose: '', 
@@ -267,7 +267,7 @@ const pricingData = {
         setHalls([...halls, newHall]);
       }
       
-      setHForm({ name: '', capacity: '', facilities: '', rate: '', location: '', avail: 'available' }); 
+      setHForm({ name: '', capacity: '', avail: 'available' }); 
       setEditH(null); 
       alert('Hall saved! Hall ID: ' + h.id);
     } catch (error) {
@@ -1280,15 +1280,12 @@ const pricingData = {
     <form onSubmit={submitH} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
       <input type="text" placeholder="Hall Name *" value={hForm.name} onChange={(e) => setHForm({ ...hForm, name: e.target.value })} required style={inp} />
       <input type="number" placeholder="Capacity *" value={hForm.capacity} onChange={(e) => setHForm({ ...hForm, capacity: e.target.value })} required style={inp} />
-      <input type="text" placeholder="Facilities *" value={hForm.facilities} onChange={(e) => setHForm({ ...hForm, facilities: e.target.value })} required style={inp} />
-      <input type="number" placeholder="Hourly Rate (₹) *" value={hForm.rate} onChange={(e) => setHForm({ ...hForm, rate: e.target.value })} required style={inp} />
-      <input type="text" placeholder="Location *" value={hForm.location} onChange={(e) => setHForm({ ...hForm, location: e.target.value })} required style={inp} />
       <select value={hForm.avail} onChange={(e) => setHForm({ ...hForm, avail: e.target.value })} required style={inp}>
         <option value="available">Available</option>
         <option value="unavailable">Unavailable</option>
       </select>
       <button type="submit" style={{ ...btn, gridColumn: '1 / -1' }}>{editH ? 'Update' : 'Add'} Hall</button>
-      {editH && <button type="button" onClick={() => { setEditH(null); setHForm({ name: '', capacity: '', facilities: '', rate: '', location: '', avail: 'available' }); }} style={{ ...btn, gridColumn: '1 / -1', background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>}
+      {editH && <button type="button" onClick={() => { setEditH(null); setHForm({ name: '', capacity: '', avail: 'available' }); }} style={{ ...btn, gridColumn: '1 / -1', background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>}
     </form>
     <h3 style={{ color: '#2B4C7E', fontWeight: '600' }}>All Halls ({halls.length})</h3>
     {halls.length > 0 ? (
@@ -1296,7 +1293,7 @@ const pricingData = {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid #2B4C7E' }}>
-              {['ID', 'Name', 'Capacity', 'Facilities', 'Rate/Hour', 'Location', 'Status', 'Actions'].map(h => <th key={h} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600' }}>{h}</th>)}
+              {['ID', 'Name', 'Capacity', 'Status', 'Actions'].map(h => <th key={h} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600' }}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -1305,16 +1302,13 @@ const pricingData = {
                 <td style={{ padding: '0.75rem', color: '#6b7280', fontSize: '0.85rem' }}>{h.id}</td>
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{h.name}</td>
                 <td style={{ padding: '0.75rem', color: '#6b7280' }}>{h.capacity}</td>
-                <td style={{ padding: '0.75rem', color: '#1f2937' }}>{h.facilities}</td>
-                <td style={{ padding: '0.75rem', color: '#2B4C7E', fontWeight: '600' }}>₹{h.rate}</td>
-                <td style={{ padding: '0.75rem', color: '#6b7280' }}>{h.location}</td>
                 <td style={{ padding: '0.75rem' }}>
                   <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.85rem', background: h.avail === 'available' ? 'rgba(45, 74, 124, 0.1)' : 'rgba(220, 38, 38, 0.1)', color: h.avail === 'available' ? '#2B4C7E' : '#dc2626' }}>
                     {h.avail}
                   </span>
                 </td>
                 <td style={{ padding: '0.75rem' }}>
-                  <button onClick={() => { setEditH(h); setHForm({ name: h.name, capacity: h.capacity, facilities: h.facilities, rate: h.rate, location: h.location, avail: h.avail }); }} style={{ padding: '0.5rem', marginRight: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={16} /></button>
+                  <button onClick={() => { setEditH(h); setHForm({ name: h.name, capacity: h.capacity, avail: h.avail }); }} style={{ padding: '0.5rem', marginRight: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={16} /></button>
                   <button onClick={async () => { 
   if (confirm('Delete?')) {
     try {
