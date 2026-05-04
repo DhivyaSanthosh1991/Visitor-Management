@@ -1147,7 +1147,7 @@ const pricingData = {
         />
       </div>
       <button type="submit" style={{ ...btn, gridColumn: '1 / -1' }}>{editV ? 'Update' : 'Add'} Visitor</button>
-      {editV && <button type="button" onClick={() => { setEditV(null); setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', Host: '', accompanying: [] }); }} style={{ ...btn, gridColumn: '1 / -1', background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>}
+      {editV && <button type="button" onClick={() => { setEditV(null); setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', host: '', accompanying: [] }); }} style={{ ...btn, gridColumn: '1 / -1', background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>}
     </form>
     <h3 style={{ color: '#2B4C7E', fontWeight: '600' }}>All Visitors ({visitors.length})</h3>
     {visitors.length > 0 ? (
@@ -1168,7 +1168,7 @@ const pricingData = {
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.company}</td>
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.purpose}</td>
                 <td style={{ padding: '0.75rem' }}>
-                  <button onClick={() => { setEditV(v); setVForm({ name: v.name, email: v.email, phone: v.phone, countryCode: v.countryCode || '+91', company: v.company, purpose: v.purpose, Host: v.Host, accompanying: v.accompanying || [] }); }} style={{ padding: '0.5rem', marginRight: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={16} /></button>
+                  <button onClick={() => { setEditV(v); setVForm({ name: v.name, email: v.email, phone: v.phone, countryCode: v.countryCode || '+91', company: v.company, purpose: v.purpose, host: v.host, accompanying: v.accompanying || [] }); }} style={{ padding: '0.5rem', marginRight: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={16} /></button>
                   <button onClick={async () => { 
   if (confirm('Delete?')) {
     try {
