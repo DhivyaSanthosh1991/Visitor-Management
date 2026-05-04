@@ -614,7 +614,7 @@ const pricingData = {
       </div>
       <div>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Host *</label>
-        <input type="text" value={vForm.Host} onChange={(e) => setVForm({ ...vForm, Host: e.target.value })} required style={inp} />
+        <input type="text" value={vForm.host} onChange={(e) => setVForm({ ...vForm, host: e.target.value })} required style={inp} />
       </div>
       
       <div style={{ gridColumn: '1 / -1', marginTop: '1rem', padding: '1rem', background: '#f3f4f6', borderRadius: '8px' }}>
