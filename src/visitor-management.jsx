@@ -23,7 +23,7 @@ const VisitorManagementSystem = () => {
   const [bookings, setBookings] = useState([]);
   const [coworking, setCoworking] = useState([]);
   
-  const [vForm, setVForm] = useState({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', Host: '', accompanying: [] });
+  const [vForm, setVForm] = useState({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', host: '', accompanying: [] });
   const [eForm, setEForm] = useState({ eventName: '', organizer: '', partner: '', type: '', date: '', start: '', end: '', venue: '', desc: '', max: '' });
   const [hForm, setHForm] = useState({ name: '', capacity: '', avail: 'available' });
   const [bForm, setBForm] = useState({ 
@@ -200,7 +200,7 @@ const pricingData = {
         setVisitors([...visitors, newVisitor]);
       }
       
-      setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', Host: '', accompanying: [] }); 
+      setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', host: '', accompanying: [] }); 
       setEditV(null); 
       
       if (!isAdmin) { 
@@ -1124,7 +1124,7 @@ const pricingData = {
     </div>
     <h3 style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '2rem' }}>{editV ? 'Edit' : 'Add'} Visitor</h3>
     <form onSubmit={submitV} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-      {['name', 'email', 'company', 'purpose', 'Host'].map(f => (
+      {['name', 'email', 'company', 'purpose', 'host'].map(f => (
         <input key={f} type={f === 'email' ? 'email' : 'text'} placeholder={f.charAt(0).toUpperCase() + f.slice(1)} value={vForm[f]} onChange={(e) => setVForm({ ...vForm, [f]: e.target.value })} required style={inp} />
       ))}
       <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.5rem' }}>
