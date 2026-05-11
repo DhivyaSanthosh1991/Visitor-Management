@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Calendar, Download, Edit2, Trash2, CheckCircle, XCircle, Building, LogOut, MapPin, Mail, Phone, Briefcase, Plus, Minus } from 'lucide-react';
+import { Users, Calendar, Download, Edit2, Trash2, CheckCircle, XCircle, Building, LogOut, MapPin, Mail, Phone, Briefcase, Plus, Minus, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
@@ -22,6 +22,12 @@ const VisitorManagementSystem = () => {
   const [halls, setHalls] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [coworking, setCoworking] = useState([]);
+  // Search/Filter states
+const [visitorSearch, setVisitorSearch] = useState('');
+const [bookingSearch, setBookingSearch] = useState('');
+const [bookingStatusFilter, setBookingStatusFilter] = useState('all');
+const [coworkingSearch, setCoworkingSearch] = useState('');
+const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   
   const [vForm, setVForm] = useState({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', host: '', accompanying: [] });
   const [eForm, setEForm] = useState({ eventName: '', organizer: '', partner: '', type: '', date: '', start: '', end: '', venue: '', desc: '', max: '' });
@@ -158,7 +164,7 @@ const VisitorManagementSystem = () => {
       
       if (editV) {
         await updateVisitor(editV.firebaseId, v);
-        setVisitors(visitors.map(x => x.firebaseId === editV.firebaseId ? { ...v, firebaseId: editV.firebaseId } : x));
+        setVisitors(getFilteredVisitors().map(x => x.firebaseId === editV.firebaseId ? { ...v, firebaseId: editV.firebaseId } : x));
       } else {
         const newVisitor = await addVisitor(v);
         setVisitors([...visitors, newVisitor]);
@@ -369,7 +375,7 @@ const VisitorManagementSystem = () => {
       };
       
       await updateBookingFirebase(booking.firebaseId, updatedBooking);
-      setBookings(bookings.map(b => b.firebaseId === booking.firebaseId ? updatedBooking : b));
+      setBookings(getFilteredBookings().map(b => b.firebaseId === booking.firebaseId ? updatedBooking : b));
       
       if (status !== 'pending') {
         const subject = status === 'approved' 
@@ -401,7 +407,7 @@ const VisitorManagementSystem = () => {
       };
       
       await updateCoworkingFirebase(request.firebaseId, updatedCoworking);
-      setCoworking(coworking.map(c => c.firebaseId === request.firebaseId ? updatedCoworking : c));
+      setCoworking(getFilteredCoworking().map(c => c.firebaseId === request.firebaseId ? updatedCoworking : c));
       
       if (status !== 'pending') {
         const subject = status === 'approved' 
@@ -420,37 +426,98 @@ const VisitorManagementSystem = () => {
     }
   };
   
-  const exportToExcel = (data, fileName) => {
-    if (!data?.length) { 
-      alert('No data to export'); 
-      return; 
+ const exportToExcel = (data, fileName) => {
+  if (!data?.length) { 
+    alert('No data to export'); 
+    return; 
+  }
+
+// Filter functions
+const getFilteredVisitors = () => {
+  return visitors.filter(v => 
+    v.id?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+    v.name?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+    v.company?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+    v.email?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+    v.time?.toLowerCase().includes(visitorSearch.toLowerCase())
+  );
+};
+
+const getFilteredBookings = () => {
+  return bookings.filter(b => {
+    const matchesSearch = b.id?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+      b.organizerName?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+      b.organization?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+      b.date?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+      b.hallName?.toLowerCase().includes(bookingSearch.toLowerCase());
+    
+    const matchesStatus = bookingStatusFilter === 'all' || b.status === bookingStatusFilter;
+    
+    return matchesSearch && matchesStatus;
+  });
+};
+
+const getFilteredCoworking = () => {
+  return coworking.filter(c => {
+    const matchesSearch = c.id?.toLowerCase().includes(coworkingSearch.toLowerCase()) ||
+      c.name?.toLowerCase().includes(coworkingSearch.toLowerCase()) ||
+      c.company?.toLowerCase().includes(coworkingSearch.toLowerCase()) ||
+      c.startDate?.toLowerCase().includes(coworkingSearch.toLowerCase());
+    
+    const matchesStatus = coworkingStatusFilter === 'all' || c.status === coworkingStatusFilter;
+    
+    return matchesSearch && matchesStatus;
+  });
+};
+   
+  // Clean data - remove unwanted fields and format properly
+  const cleanedData = data.map(item => {
+    const cleaned = { ...item };
+    
+    // Remove Firebase-specific fields
+    delete cleaned.firebaseId;
+    delete cleaned.createdAt;
+    
+    // Remove duplicate phone fields if fullPhone exists
+    if (cleaned.fullPhone) {
+      delete cleaned.phone;
+      delete cleaned.countryCode;
     }
     
-    const ws_data = [];
-    const headers = Object.keys(data[0]).map(key => 
-      key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
-    );
-    ws_data.push(headers);
-    data.forEach(item => ws_data.push(Object.values(item)));
+    // Format accompanying visitors properly
+    if (cleaned.accompanying && Array.isArray(cleaned.accompanying)) {
+      cleaned.accompanying = cleaned.accompanying.map(a => 
+        `${a.name} (${a.countryCode || '+91'}${a.phone})${a.company ? ' - ' + a.company : ''}`
+      ).join('; ');
+    }
     
-    const ws = XLSX.utils.aoa_to_sheet(ws_data);
-    const colWidths = headers.map((header, i) => {
-      const maxLength = Math.max(
-        header.length,
-        ...data.map(row => String(Object.values(row)[i] || '').length)
-      );
-      return { wch: Math.min(maxLength + 2, 50) };
-    });
-    ws['!cols'] = colWidths;
-    
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Data');
-    const today = new Date().toISOString().split('T')[0];
-    const fullFileName = `${fileName}_${today}.xlsx`;
-    XLSX.writeFile(wb, fullFileName);
-    alert(`Excel file exported: ${fullFileName}`);
-  };
+    return cleaned;
+  });
   
+  const ws_data = [];
+  const headers = Object.keys(cleanedData[0]).map(key => 
+    key.split(/(?=[A-Z])/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+  );
+  ws_data.push(headers);
+  cleanedData.forEach(item => ws_data.push(Object.values(item)));
+  
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  const colWidths = headers.map((header, i) => {
+    const maxLength = Math.max(
+      header.length,
+      ...cleanedData.map(row => String(Object.values(row)[i] || '').length)
+    );
+    return { wch: Math.min(maxLength + 2, 50) };
+  });
+  ws['!cols'] = colWidths;
+  
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Data');
+  const today = new Date().toISOString().split('T')[0];
+  const fullFileName = `${fileName}_${today}.xlsx`;
+  XLSX.writeFile(wb, fullFileName);
+  alert(`Excel file exported: ${fullFileName}`);
+};
   const inp = { width: '100%', padding: '0.75rem', background: '#ffffff', border: '2px solid #d1d5db', borderRadius: '6px', color: '#1f2937', fontSize: '0.95rem' };
   const btn = { padding: '0.75rem 1.5rem', background: '#2B4C7E', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.3s' };
   const btnAccent = { padding: '0.75rem 1.5rem', background: '#F5A623', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.3s' };
@@ -516,7 +583,7 @@ const VisitorManagementSystem = () => {
                 <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1.5rem' }}>Dashboard</h2>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                   {[
-                    { t: 'Visitors', v: visitors.length, i: Users },
+                    { t: 'Visitors', v: getFilteredVisitors().length, i: Users },
                     { t: 'Events', v: events.length, i: Calendar },
                     { t: 'Pending Bookings', v: bookings.filter(b => b.status === 'pending').length, i: Building },
                     { t: 'Coworking Requests', v: coworking.filter(c => c.status === 'pending').length, i: Briefcase }
@@ -1027,13 +1094,24 @@ const VisitorManagementSystem = () => {
 
 {tab === 'admin-v' && isAdmin && (
   <div style={card}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-      <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Visitor Management</h2>
-      <button onClick={() => exportToExcel(visitors, 'StartupTN_Visitors')} style={btn}>
-        <Download size={18} style={{ marginRight: '0.5rem' }} /> Export to Excel
-      </button>
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+  <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Visitor Management</h2>
+  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+    <div style={{ position: 'relative', minWidth: '250px' }}>
+      <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
+      <input 
+        type="text"
+        placeholder="Search by ID, Name, Company, Email, Date..."
+        value={visitorSearch}
+        onChange={(e) => setVisitorSearch(e.target.value)}
+        style={{ ...inp, paddingLeft: '2.5rem', minWidth: '300px' }}
+      />
     </div>
-    <h3 style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '2rem' }}>{editV ? 'Edit' : 'Add'} Visitor</h3>
+    <button onClick={() => exportToExcel(getFilteredVisitors(), 'StartupTN_Visitors')} style={btn}>
+      <Download size={18} style={{ marginRight: '0.5rem' }} /> Export to Excel
+    </button>
+  </div>
+</div>    <h3 style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '2rem' }}>{editV ? 'Edit' : 'Add'} Visitor</h3>
     <form onSubmit={submitV} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
       {['name', 'email', 'company', 'purpose', 'host'].map(f => (
         <input key={f} type={f === 'email' ? 'email' : 'text'} placeholder={f.charAt(0).toUpperCase() + f.slice(1)} value={vForm[f]} onChange={(e) => setVForm({ ...vForm, [f]: e.target.value })} required style={inp} />
@@ -1060,8 +1138,8 @@ const VisitorManagementSystem = () => {
       <button type="submit" style={{ ...btn, gridColumn: '1 / -1' }}>{editV ? 'Update' : 'Add'} Visitor</button>
       {editV && <button type="button" onClick={() => { setEditV(null); setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', host: '', accompanying: [] }); }} style={{ ...btn, gridColumn: '1 / -1', background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>}
     </form>
-    <h3 style={{ color: '#2B4C7E', fontWeight: '600' }}>All Visitors ({visitors.length})</h3>
-    {visitors.length > 0 ? (
+    <h3 style={{ color: '#2B4C7E', fontWeight: '600' }}>All Visitors ({getFilteredVisitors().length})</h3>
+    {getFilteredVisitors().length > 0 ? (
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -1070,7 +1148,7 @@ const VisitorManagementSystem = () => {
             </tr>
           </thead>
           <tbody>
-            {visitors.map((v, i) => (
+            {getFilteredVisitors().map((v, i) => (
               <tr key={v.id} style={{ borderBottom: '1px solid #e5e7eb', background: i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
                 <td style={{ padding: '0.75rem', color: '#6b7280', fontSize: '0.85rem' }}>{v.id}</td>
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.name}</td>
@@ -1243,10 +1321,28 @@ const VisitorManagementSystem = () => {
 
 {tab === 'admin-b' && isAdmin && (
   <div style={card}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-      <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Hall Bookings</h2>
-      <button onClick={() => exportToExcel(bookings, 'StartupTN_Bookings')} style={btn}><Download size={18} /> Export Excel</button>
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+  <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Hall Bookings</h2>
+  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+    <div style={{ position: 'relative', minWidth: '250px' }}>
+      <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
+      <input 
+        type="text"
+        placeholder="Search by ID, Name, Date, Hall..."
+        value={bookingSearch}
+        onChange={(e) => setBookingSearch(e.target.value)}
+        style={{ ...inp, paddingLeft: '2.5rem', minWidth: '300px' }}
+      />
     </div>
+    <select value={bookingStatusFilter} onChange={(e) => setBookingStatusFilter(e.target.value)} style={inp}>
+      <option value="all">All Status</option>
+      <option value="pending">Pending</option>
+      <option value="approved">Approved</option>
+      <option value="rejected">Rejected</option>
+    </select>
+    <button onClick={() => exportToExcel(getFilteredBookings(), 'StartupTN_Bookings')} style={btn}><Download size={18} /> Export Excel</button>
+  </div>
+</div>
     <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
       {[
         { l: 'Pending', v: bookings.filter(b => b.status === 'pending').length, c: '#F5A623' },
@@ -1259,7 +1355,7 @@ const VisitorManagementSystem = () => {
         </div>
       ))}
     </div>
-    {bookings.length > 0 ? bookings.map(b => (
+    {bookings.length > 0 ? getFilteredBookings().map(b => (
       <div key={b.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
@@ -1298,11 +1394,28 @@ const VisitorManagementSystem = () => {
 )}
 
 {tab === 'admin-c' && isAdmin && (
-  <div style={card}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-      <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Coworking Requests</h2>
-      <button onClick={() => exportToExcel(coworking, 'StartupTN_Coworking')} style={btn}><Download size={18} /> Export Excel</button>
+  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+  <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Coworking Requests</h2>
+  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+    <div style={{ position: 'relative', minWidth: '250px' }}>
+      <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
+      <input 
+        type="text"
+        placeholder="Search by ID, Name, Company, Date..."
+        value={coworkingSearch}
+        onChange={(e) => setCoworkingSearch(e.target.value)}
+        style={{ ...inp, paddingLeft: '2.5rem', minWidth: '300px' }}
+      />
     </div>
+    <select value={coworkingStatusFilter} onChange={(e) => setCoworkingStatusFilter(e.target.value)} style={inp}>
+      <option value="all">All Status</option>
+      <option value="pending">Pending</option>
+      <option value="approved">Approved</option>
+      <option value="rejected">Rejected</option>
+    </select>
+    <button onClick={() => exportToExcel(getFilteredCoworking(), 'StartupTN_Coworking')} style={btn}><Download size={18} /> Export Excel</button>
+  </div>
+</div>
     <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
       {[
         { l: 'Pending', v: coworking.filter(c => c.status === 'pending').length, c: '#F5A623' },
@@ -1315,7 +1428,7 @@ const VisitorManagementSystem = () => {
         </div>
       ))}
     </div>
-    {coworking.length > 0 ? coworking.map(c => (
+    {coworking.length > 0 ? getFilteredCoworking().map(c => (
       <div key={c.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
