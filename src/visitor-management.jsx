@@ -43,7 +43,6 @@ const VisitorManagementSystem = () => {
   const [editV, setEditV] = useState(null);
   const [editE, setEditE] = useState(null);
   const [editH, setEditH] = useState(null);
-  const [showPricing, setShowPricing] = useState(false);
   
   // Generate auto ID
   const generateId = (prefix, existingItems) => {
@@ -86,41 +85,6 @@ const VisitorManagementSystem = () => {
     );
     return approvedBookings.length;
   };
-  // Pricing information
-const pricingData = {
-  coworking: {
-    perSeatPerDay: 200,
-    perSeatPerMonth: 5000
-  },
-  meetingSpaces: {
-    conferenceHall: {
-      name: "Conference Hall / Training Hall (30+ seats)",
-      perHour: 1500,
-      halfDay: 6000,
-      fullDay: 9000
-    },
-    boardRoom: {
-      name: "Board Room (15-30 seats)",
-      perHour: 750,
-      halfDay: 3000,
-      fullDay: 4500
-    },
-    meetingRoom: {
-      name: "Meeting Room (Below 15 seats)",
-      perHour: 400,
-      halfDay: 1600,
-      fullDay: 2400
-    }
-  },
-  inclusions: [
-    "Wi-Fi - Reliable internet connectivity throughout the premises",
-    "Admin Support - On-site assistance for administrative needs, including entry access, technical support (Wi-Fi, electrical, AV equipment), and future bookings",
-    "Restroom Access - Unrestricted access to clean and well-maintained restrooms",
-    "Cafeteria Access - Access to the cafeteria with refreshments and meals available on a cost-to-cost basis",
-    "20% concession on final approved rates for Smart Card holders"
-  ],
-  note: "All rates are excluding GST"
-};
  // Load data from Firebase
   useEffect(() => {
     const loadData = async () => {
@@ -852,35 +816,7 @@ const pricingData = {
   <div style={card}>
     <button onClick={() => setTab('home')} style={{ ...btn, marginBottom: '1rem' }}>← Back</button>
     <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1.5rem' }}>Hall Booking Request</h2>
-    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-  <button 
-    onClick={() => setShowPricing(true)}
-    style={{ ...btn, background: '#F5A623' }}
-  >
-    💰 View Pricing & Details
-  </button>
-</div>
-
-<div style={{ background: '#E8F5E9', border: '2px solid #059669', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem' }}>
-  <h4 style={{ color: '#2B4C7E', margin: '0 0 0.5rem', fontWeight: '600' }}>📊 Meeting Space Rates (Excluding GST)</h4>
-  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '0.75rem', fontSize: '0.9rem' }}>
-    <div style={{ background: '#ffffff', padding: '0.75rem', borderRadius: '6px' }}>
-      <p style={{ margin: 0, color: '#2B4C7E', fontWeight: '600' }}>Conference/Training (30+)</p>
-      <p style={{ margin: '0.25rem 0 0', color: '#6b7280' }}>₹1,500/hr | ₹6,000/½day | ₹9,000/day</p>
-    </div>
-    <div style={{ background: '#ffffff', padding: '0.75rem', borderRadius: '6px' }}>
-      <p style={{ margin: 0, color: '#2B4C7E', fontWeight: '600' }}>Board Room (15-30)</p>
-      <p style={{ margin: '0.25rem 0 0', color: '#6b7280' }}>₹750/hr | ₹3,000/½day | ₹4,500/day</p>
-    </div>
-    <div style={{ background: '#ffffff', padding: '0.75rem', borderRadius: '6px' }}>
-    <p style={{ margin: 0, color: '#2B4C7E', fontWeight: '600' }}>Meeting Room (&lt;15)</p>
-      <p style={{ margin: '0.25rem 0 0', color: '#6b7280' }}>₹400/hr | ₹1,600/½day | ₹2,400/day</p>
-    </div>
-  </div>
-  <p style={{ margin: '0.5rem 0 0', color: '#6b7280', fontSize: '0.85rem' }}>
-    ⭐ 20% concession for Smart Card holders | Click "View Pricing" for complete details
-  </p>
-</div>
+    
     {halls.length > 0 && (
       <div style={{ marginBottom: '2rem' }}>
         <h3 style={{ color: '#2B4C7E', fontWeight: '600', marginBottom: '1rem' }}>Available Halls</h3>
@@ -1001,32 +937,7 @@ const pricingData = {
 {tab === 'cowork' && (
   <div style={card}>
     <button onClick={() => setTab('home')} style={{ ...btn, marginBottom: '1rem' }}>← Back</button>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-  <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Coworking Space Request</h2>
-  <button 
-    onClick={() => setShowPricing(true)}
-    style={{ ...btn, background: '#F5A623' }}
-  >
-    💰 View Pricing
-  </button>
-</div>
-
-<div style={{ background: '#FFF9E6', border: '2px solid #F5A623', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem' }}>
-  <h4 style={{ color: '#2B4C7E', margin: '0 0 0.5rem', fontWeight: '600' }}>📊 Coworking Rates (Excluding GST)</h4>
-  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-    <div>
-      <p style={{ margin: '0.25rem 0', color: '#6b7280', fontSize: '0.9rem' }}>Per Seat / Day</p>
-      <p style={{ margin: 0, color: '#2B4C7E', fontSize: '1.5rem', fontWeight: '700' }}>₹{pricingData.coworking.perSeatPerDay}</p>
-    </div>
-    <div>
-      <p style={{ margin: '0.25rem 0', color: '#6b7280', fontSize: '0.9rem' }}>Per Seat / Month</p>
-      <p style={{ margin: 0, color: '#2B4C7E', fontSize: '1.5rem', fontWeight: '700' }}>₹{pricingData.coworking.perSeatPerMonth}</p>
-    </div>
-  </div>
-  <p style={{ margin: '0.5rem 0 0', color: '#6b7280', fontSize: '0.85rem' }}>
-    ⭐ 20% concession for Smart Card holders | Includes: Wi-Fi, Admin Support, Restroom & Cafeteria Access
-  </p>
-</div>
+    <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1.5rem' }}>Coworking Space Request</h2>
     <form onSubmit={submitC} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
       <div>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Name *</label>
@@ -1490,77 +1401,6 @@ const pricingData = {
           </div>
         </div>
       )}
-      {/* PRICING MODAL */}
-{showPricing && (
-  <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-    <div style={{ background: '#ffffff', borderRadius: '12px', padding: '2rem', maxWidth: '900px', width: '90%', maxHeight: '90vh', overflow: 'auto', border: '3px solid #2B4C7E' }}>
-      <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginTop: 0 }}>💰 StartupTN - Pricing Details</h2>
-      
-      {/* Co-working Rates */}
-      <div style={{ background: '#FFF9E6', border: '2px solid #F5A623', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.5rem' }}>
-        <h3 style={{ color: '#2B4C7E', margin: '0 0 1rem', fontWeight: '700' }}>🪑 Co-Working Space Rates</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
-          <div style={{ background: '#ffffff', padding: '1rem', borderRadius: '8px', textAlign: 'center' }}>
-            <p style={{ margin: '0 0 0.5rem', color: '#6b7280', fontSize: '0.9rem' }}>Per Seat / Day</p>
-            <p style={{ margin: 0, color: '#2B4C7E', fontSize: '2rem', fontWeight: '700' }}>₹{pricingData.coworking.perSeatPerDay}</p>
-          </div>
-          <div style={{ background: '#ffffff', padding: '1rem', borderRadius: '8px', textAlign: 'center' }}>
-            <p style={{ margin: '0 0 0.5rem', color: '#6b7280', fontSize: '0.9rem' }}>Per Seat / Month</p>
-            <p style={{ margin: 0, color: '#2B4C7E', fontSize: '2rem', fontWeight: '700' }}>₹{pricingData.coworking.perSeatPerMonth}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Meeting Spaces Rates */}
-      <div style={{ background: '#E8F5E9', border: '2px solid #059669', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.5rem' }}>
-        <h3 style={{ color: '#2B4C7E', margin: '0 0 1rem', fontWeight: '700' }}>🏢 Meeting Space Rates</h3>
-        
-        {Object.values(pricingData.meetingSpaces).map((space, idx) => (
-          <div key={idx} style={{ background: '#ffffff', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
-            <h4 style={{ color: '#2B4C7E', margin: '0 0 0.5rem', fontWeight: '600' }}>{space.name}</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem' }}>
-              <div>
-                <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Per Hour</p>
-                <p style={{ margin: 0, color: '#2B4C7E', fontSize: '1.25rem', fontWeight: '700' }}>₹{space.perHour}</p>
-              </div>
-              <div>
-                <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Half Day (4 hrs)</p>
-                <p style={{ margin: 0, color: '#2B4C7E', fontSize: '1.25rem', fontWeight: '700' }}>₹{space.halfDay}</p>
-              </div>
-              <div>
-                <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>Full Day (8 hrs)</p>
-                <p style={{ margin: 0, color: '#2B4C7E', fontSize: '1.25rem', fontWeight: '700' }}>₹{space.fullDay}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Inclusions */}
-      <div style={{ background: '#f3f4f6', border: '2px solid #6b7280', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.5rem' }}>
-        <h3 style={{ color: '#2B4C7E', margin: '0 0 1rem', fontWeight: '700' }}>✨ Inclusions (All Bookings)</h3>
-        <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#1f2937' }}>
-          {pricingData.inclusions.map((item, idx) => (
-            <li key={idx} style={{ marginBottom: '0.5rem' }}>{item}</li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Note */}
-      <div style={{ background: '#FEF3C7', border: '2px solid #F59E0B', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem' }}>
-        <p style={{ margin: 0, color: '#92400E', fontWeight: '600' }}>⚠️ {pricingData.note}</p>
-      </div>
-
-      {/* Close Button */}
-      <button 
-        onClick={() => setShowPricing(false)}
-        style={{ ...btn, width: '100%', background: '#2B4C7E' }}
-      >
-        Close
-      </button>
-    </div>
-  </div>
-)}
     </div>
   );
 };
