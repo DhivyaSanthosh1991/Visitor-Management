@@ -61,7 +61,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   
   // Get today's date
   const getTodayDate = () => {
-    return new Date().toISOString().split('T')[0];  
+    return new Date().toISOString().split('T')[0];
   };
   
   // Validate phone
@@ -91,6 +91,45 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     );
     return approvedBookings.length;
   };
+
+  // ✅ FIX: Filter functions MOVED OUTSIDE exportToExcel
+  const getFilteredVisitors = () => {
+    return visitors.filter(v => 
+      v.id?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+      v.name?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+      v.company?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+      v.email?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+      v.time?.toLowerCase().includes(visitorSearch.toLowerCase())
+    );
+  };
+
+  const getFilteredBookings = () => {
+    return bookings.filter(b => {
+      const matchesSearch = b.id?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+        b.organizerName?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+        b.organization?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+        b.date?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+        b.hallName?.toLowerCase().includes(bookingSearch.toLowerCase());
+      
+      const matchesStatus = bookingStatusFilter === 'all' || b.status === bookingStatusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+  };
+
+  const getFilteredCoworking = () => {
+    return coworking.filter(c => {
+      const matchesSearch = c.id?.toLowerCase().includes(coworkingSearch.toLowerCase()) ||
+        c.name?.toLowerCase().includes(coworkingSearch.toLowerCase()) ||
+        c.company?.toLowerCase().includes(coworkingSearch.toLowerCase()) ||
+        c.startDate?.toLowerCase().includes(coworkingSearch.toLowerCase());
+      
+      const matchesStatus = coworkingStatusFilter === 'all' || c.status === coworkingStatusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+  };
+
  // Load data from Firebase
   useEffect(() => {
     const loadData = async () => {
@@ -162,12 +201,12 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         time: editV?.time || new Date().toLocaleString() 
       };
       
-      if (editV) {
+      if (editV && editV.firebaseId) {
         await updateVisitor(editV.firebaseId, v);
-        setVisitors(getFilteredVisitors().map(x => x.firebaseId === editV.firebaseId ? { ...v, firebaseId: editV.firebaseId } : x));
+        setVisitors(visitors.map(x => x.firebaseId === editV.firebaseId ? { ...v, firebaseId: editV.firebaseId } : x));
       } else {
         const newVisitor = await addVisitor(v);
-        setVisitors([...visitors, newVisitor]);
+        setVisitors([...visitors, { ...v, firebaseId: newVisitor.id }]);
       }
       
       setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', toMeet: '', accompanying: [] }); 
@@ -202,12 +241,12 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         created: editE?.created || new Date().toLocaleString() 
       };
       
-      if (editE) {
+      if (editE && editE.firebaseId) {
         await updateEvent(editE.firebaseId, ev);
         setEvents(events.map(x => x.firebaseId === editE.firebaseId ? { ...ev, firebaseId: editE.firebaseId } : x));
       } else {
         const newEvent = await addEvent(ev);
-        setEvents([...events, newEvent]);
+        setEvents([...events, { ...ev, firebaseId: newEvent.id }]);
       }
       
       setEForm({ eventName: '', organizer: '', partner: '', type: '', date: '', start: '', end: '', venue: '', desc: '', max: '' }); 
@@ -229,12 +268,12 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         created: editH?.created || new Date().toLocaleString() 
       };
       
-      if (editH) {
+      if (editH && editH.firebaseId) {
         await updateHall(editH.firebaseId, h);
         setHalls(halls.map(x => x.firebaseId === editH.firebaseId ? { ...h, firebaseId: editH.firebaseId } : x));
       } else {
         const newHall = await addHall(h);
-        setHalls([...halls, newHall]);
+        setHalls([...halls, { ...h, firebaseId: newHall.id }]);
       }
       
       setHForm({ name: '', capacity: '', avail: 'available' }); 
@@ -340,6 +379,11 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         alert('Event not found!');
         return;
       }
+
+      if (!event.firebaseId) {
+        alert('Event data is incomplete. Please try again.');
+        return;
+      }
       
       const updatedEvent = {
         ...event,
@@ -365,7 +409,15 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
  const updateBooking = async (id, status, msg = '') => { 
     try {
       const booking = bookings.find(b => b.id === id);
-      if (!booking) return;
+      if (!booking) {
+        alert('Booking not found!');
+        return;
+      }
+
+      if (!booking.firebaseId) {
+        alert('Booking data is incomplete. Please refresh the page.');
+        return;
+      }
       
       const updatedBooking = {
         ...booking,
@@ -375,7 +427,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       };
       
       await updateBookingFirebase(booking.firebaseId, updatedBooking);
-      setBookings(getFilteredBookings().map(b => b.firebaseId === booking.firebaseId ? updatedBooking : b));
+      setBookings(bookings.map(b => b.firebaseId === booking.firebaseId ? updatedBooking : b));
       
       if (status !== 'pending') {
         const subject = status === 'approved' 
@@ -397,7 +449,15 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   const updateCowork = async (id, status, msg = '') => { 
     try {
       const request = coworking.find(c => c.id === id);
-      if (!request) return;
+      if (!request) {
+        alert('Coworking request not found!');
+        return;
+      }
+
+      if (!request.firebaseId) {
+        alert('Coworking data is incomplete. Please refresh the page.');
+        return;
+      }
       
       const updatedCoworking = {
         ...request,
@@ -407,7 +467,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       };
       
       await updateCoworkingFirebase(request.firebaseId, updatedCoworking);
-      setCoworking(getFilteredCoworking().map(c => c.firebaseId === request.firebaseId ? updatedCoworking : c));
+      setCoworking(coworking.map(c => c.firebaseId === request.firebaseId ? updatedCoworking : c));
       
       if (status !== 'pending') {
         const subject = status === 'approved' 
@@ -431,44 +491,6 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     alert('No data to export'); 
     return; 
   }
-
-// Filter functions
-const getFilteredVisitors = () => {
-  return visitors.filter(v => 
-    v.id?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-    v.name?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-    v.company?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-    v.email?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-    v.time?.toLowerCase().includes(visitorSearch.toLowerCase())
-  );
-};
-
-const getFilteredBookings = () => {
-  return bookings.filter(b => {
-    const matchesSearch = b.id?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
-      b.organizerName?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
-      b.organization?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
-      b.date?.toLowerCase().includes(bookingSearch.toLowerCase()) ||
-      b.hallName?.toLowerCase().includes(bookingSearch.toLowerCase());
-    
-    const matchesStatus = bookingStatusFilter === 'all' || b.status === bookingStatusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
-};
-
-const getFilteredCoworking = () => {
-  return coworking.filter(c => {
-    const matchesSearch = c.id?.toLowerCase().includes(coworkingSearch.toLowerCase()) ||
-      c.name?.toLowerCase().includes(coworkingSearch.toLowerCase()) ||
-      c.company?.toLowerCase().includes(coworkingSearch.toLowerCase()) ||
-      c.startDate?.toLowerCase().includes(coworkingSearch.toLowerCase());
-    
-    const matchesStatus = coworkingStatusFilter === 'all' || c.status === coworkingStatusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
-};
    
   // Clean data - remove unwanted fields and format properly
   const cleanedData = data.map(item => {
@@ -518,6 +540,7 @@ const getFilteredCoworking = () => {
   XLSX.writeFile(wb, fullFileName);
   alert(`Excel file exported: ${fullFileName}`);
 };
+
   const inp = { width: '100%', padding: '0.75rem', background: '#ffffff', border: '2px solid #d1d5db', borderRadius: '6px', color: '#1f2937', fontSize: '0.95rem' };
   const btn = { padding: '0.75rem 1.5rem', background: '#2B4C7E', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.3s' };
   const btnAccent = { padding: '0.75rem 1.5rem', background: '#F5A623', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.3s' };
@@ -583,7 +606,7 @@ const getFilteredCoworking = () => {
                 <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1.5rem' }}>Dashboard</h2>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                   {[
-                    { t: 'Visitors', v: getFilteredVisitors().length, i: Users },
+                    { t: 'Visitors', v: visitors.length, i: Users },
                     { t: 'Events', v: events.length, i: Calendar },
                     { t: 'Pending Bookings', v: bookings.filter(b => b.status === 'pending').length, i: Building },
                     { t: 'Coworking Requests', v: coworking.filter(c => c.status === 'pending').length, i: Briefcase }
@@ -894,7 +917,6 @@ const getFilteredCoworking = () => {
               <div key={h.id} style={{ background: '#f3f4f6', padding: '1rem', borderRadius: '8px', border: '2px solid #2B4C7E' }}>
                 <h4 style={{ color: '#2B4C7E' }}>{h.name}</h4>
                 <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Capacity: {h.capacity}</p>
-                <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>₹{h.rate}/hour</p>
                 {bookingCount > 0 && (
                   <p style={{ color: '#F5A623', fontSize: '0.85rem', fontWeight: '600' }}>
                     {bookingCount} approved booking(s) for selected date
@@ -1394,7 +1416,8 @@ const getFilteredCoworking = () => {
 )}
 
 {tab === 'admin-c' && isAdmin && (
-  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+  <div style={card}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
   <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Coworking Requests</h2>
   <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
     <div style={{ position: 'relative', minWidth: '250px' }}>
