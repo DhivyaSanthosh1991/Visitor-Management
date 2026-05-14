@@ -516,18 +516,32 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     return cleaned;
   });
   
-  const ws_data = [];
-  const headers = Object.keys(cleanedData[0]).map(key => 
+  // FIXED: Define column order explicitly to prevent scrambling
+  const allKeys = new Set();
+  cleanedData.forEach(item => {
+    Object.keys(item).forEach(key => allKeys.add(key));
+  });
+  
+  // Sort keys alphabetically for consistent order
+  const orderedKeys = Array.from(allKeys).sort();
+  
+  // Create headers with proper formatting
+  const headers = orderedKeys.map(key => 
     key.split(/(?=[A-Z])/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
   );
-  ws_data.push(headers);
-  cleanedData.forEach(item => ws_data.push(Object.values(item)));
+  
+  // Create data rows in the same order as headers
+  const ws_data = [headers];
+  cleanedData.forEach(item => {
+    const row = orderedKeys.map(key => item[key] !== undefined ? item[key] : '');
+    ws_data.push(row);
+  });
   
   const ws = XLSX.utils.aoa_to_sheet(ws_data);
   const colWidths = headers.map((header, i) => {
     const maxLength = Math.max(
       header.length,
-      ...cleanedData.map(row => String(Object.values(row)[i] || '').length)
+      ...ws_data.slice(1).map(row => String(row[i] || '').length)
     );
     return { wch: Math.min(maxLength + 2, 50) };
   });
