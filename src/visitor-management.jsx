@@ -101,7 +101,8 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       v.name?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
       v.company?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
       v.email?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-      v.time?.toLowerCase().includes(visitorSearch.toLowerCase())
+      v.time?.toLowerCase().includes(visitorSearch.toLowerCase())||
+      v.toMeet?.toLowerCase().includes(visitorSearch.toLowerCase())
     );
   };
 
