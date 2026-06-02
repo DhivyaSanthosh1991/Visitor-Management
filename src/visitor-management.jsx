@@ -29,7 +29,7 @@ const [bookingStatusFilter, setBookingStatusFilter] = useState('all');
 const [coworkingSearch, setCoworkingSearch] = useState('');
 const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   
-  const [vForm, setVForm] = useState({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', toMeet: '', accompanying: [] });
+  const [vForm, setVForm] = useState({ prefix: 'Mr', name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', toMeet: '', accompanying: [] });
   const [eForm, setEForm] = useState({ eventName: '', organizer: '', partner: '', type: '', date: '', start: '', end: '', venue: '', desc: '', max: '' });
   const [hForm, setHForm] = useState({ name: '', capacity: '', avail: 'available' });
   const [bForm, setBForm] = useState({ 
@@ -49,6 +49,8 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   const [editV, setEditV] = useState(null);
   const [editE, setEditE] = useState(null);
   const [editH, setEditH] = useState(null);
+  const [editB, setEditB] = useState(null);
+  const [editC, setEditC] = useState(null);
   
   // Generate auto ID
   const generateId = (prefix, existingItems) => {
@@ -209,7 +211,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         setVisitors([...visitors, { ...v, firebaseId: newVisitor.id }]);
       }
       
-      setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', toMeet: '', accompanying: [] }); 
+      setVForm({ prefix: 'Mr', name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', toMeet: '', accompanying: [] }); 
       setEditV(null); 
       
       if (!isAdmin) { 
@@ -516,24 +518,41 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     return cleaned;
   });
   
-  // FIXED: Define column order explicitly to prevent scrambling
+  // Sort data by ID first
+  cleanedData.sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+
+  // Remove updatedAt from all rows
+  cleanedData.forEach(item => { delete item.updatedAt; });
+
+  // Collect all keys across all rows
   const allKeys = new Set();
-  cleanedData.forEach(item => {
-    Object.keys(item).forEach(key => allKeys.add(key));
-  });
-  
-  // Sort keys alphabetically for consistent order
-  const orderedKeys = Array.from(allKeys).sort();
-  
-  // Create headers with proper formatting
-  const headers = orderedKeys.map(key => 
+  cleanedData.forEach(item => Object.keys(item).forEach(key => allKeys.add(key)));
+
+  // Fields that should always appear LAST
+  const trailingFields = ['accompanying', 'company', 'email', 'fullPhone'];
+  // Fields that should appear FIRST in this order
+  const leadingFields = ['id', 'prefix', 'name'];
+
+  const allKeysArr = Array.from(allKeys);
+  const orderedKeys = [
+    ...leadingFields.filter(k => allKeysArr.includes(k)),
+    ...allKeysArr.filter(k => !leadingFields.includes(k) && !trailingFields.includes(k)).sort(),
+    ...trailingFields.filter(k => allKeysArr.includes(k))
+  ];
+
+  // Format header labels
+  const headers = orderedKeys.map(key =>
+    key === 'fullPhone' ? 'Full Phone' :
+    key === 'toMeet' ? 'To Meet' :
+    key === 'id' ? 'ID' :
+    key === 'prefix' ? 'Prefix' :
     key.split(/(?=[A-Z])/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
   );
-  
-  // Create data rows in the same order as headers
+
+  // Create data rows in the same strict order
   const ws_data = [headers];
   cleanedData.forEach(item => {
-    const row = orderedKeys.map(key => item[key] !== undefined ? item[key] : '');
+    const row = orderedKeys.map(key => item[key] !== undefined && item[key] !== null ? item[key] : '');
     ws_data.push(row);
   });
   
@@ -644,7 +663,12 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     <form onSubmit={submitV} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
       <div>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Name *</label>
-        <input type="text" value={vForm.name} onChange={(e) => setVForm({ ...vForm, name: e.target.value })} required style={inp} />
+        <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '0.5rem' }}>
+          <select value={vForm.prefix} onChange={(e) => setVForm({ ...vForm, prefix: e.target.value })} style={inp}>
+            {['Mr', 'Ms', 'Mrs', 'Dr', 'Prof'].map(p => <option key={p} value={p}>{p}.</option>)}
+          </select>
+          <input type="text" value={vForm.name} onChange={(e) => setVForm({ ...vForm, name: e.target.value })} required style={inp} placeholder="Full Name" />
+        </div>
       </div>
       <div>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Email *</label>
@@ -1149,9 +1173,15 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   </div>
 </div>    <h3 style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '2rem' }}>{editV ? 'Edit' : 'Add'} Visitor</h3>
     <form onSubmit={submitV} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-      {['name', 'email', 'company', 'purpose', 'toMeet'].map(f => (
-  <input key={f} type={f === 'email' ? 'email' : 'text'} placeholder={f === 'toMeet' ? 'To Meet' : f.charAt(0).toUpperCase() + f.slice(1)} value={vForm[f]} onChange={(e) => setVForm({ ...vForm, [f]: e.target.value })} required style={inp} />
-))}
+      <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '0.5rem' }}>
+        <select value={vForm.prefix} onChange={(e) => setVForm({ ...vForm, prefix: e.target.value })} style={inp}>
+          {['Mr', 'Ms', 'Mrs', 'Dr', 'Prof'].map(p => <option key={p} value={p}>{p}.</option>)}
+        </select>
+        <input type="text" placeholder="Name" value={vForm.name} onChange={(e) => setVForm({ ...vForm, name: e.target.value })} required style={inp} />
+      </div>
+      {['email', 'company', 'purpose', 'toMeet'].map(f => (
+        <input key={f} type={f === 'email' ? 'email' : 'text'} placeholder={f === 'toMeet' ? 'To Meet' : f.charAt(0).toUpperCase() + f.slice(1)} value={vForm[f]} onChange={(e) => setVForm({ ...vForm, [f]: e.target.value })} required style={inp} />
+      ))}
       <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.5rem' }}>
         <input 
           type="text" 
@@ -1172,7 +1202,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         />
       </div>
       <button type="submit" style={{ ...btn, gridColumn: '1 / -1' }}>{editV ? 'Update' : 'Add'} Visitor</button>
-      {editV && <button type="button" onClick={() => { setEditV(null); setVForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', toMeet: '', accompanying: [] }); }} style={{ ...btn, gridColumn: '1 / -1', background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>}
+      {editV && <button type="button" onClick={() => { setEditV(null); setVForm({ prefix: 'Mr', name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', toMeet: '', accompanying: [] }); }} style={{ ...btn, gridColumn: '1 / -1', background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>}
     </form>
     <h3 style={{ color: '#2B4C7E', fontWeight: '600' }}>All Visitors ({getFilteredVisitors().length})</h3>
     {getFilteredVisitors().length > 0 ? (
@@ -1180,20 +1210,22 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid #2B4C7E' }}>
-              {['ID', 'Name', 'Email', 'Phone', 'Company', 'Purpose', 'Actions'].map(h => <th key={h} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600' }}>{h}</th>)}
+              {['ID', 'Name', 'Email', 'Phone', 'Company', 'Purpose', 'To Meet', 'Date/Time', 'Actions'].map(h => <th key={h} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600' }}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {getFilteredVisitors().map((v, i) => (
+            {[...getFilteredVisitors()].sort((a, b) => (a.id || '').localeCompare(b.id || '')).map((v, i) => (
               <tr key={v.id} style={{ borderBottom: '1px solid #e5e7eb', background: i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
                 <td style={{ padding: '0.75rem', color: '#6b7280', fontSize: '0.85rem' }}>{v.id}</td>
-                <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.name}</td>
+                <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.prefix ? `${v.prefix}. ${v.name}` : v.name}</td>
                 <td style={{ padding: '0.75rem', color: '#6b7280' }}>{v.email}</td>
                 <td style={{ padding: '0.75rem', color: '#6b7280' }}>{v.fullPhone || v.phone}</td>
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.company}</td>
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.purpose}</td>
+                <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.toMeet}</td>
+                <td style={{ padding: '0.75rem', color: '#6b7280', fontSize: '0.85rem' }}>{v.time}</td>
                 <td style={{ padding: '0.75rem' }}>
-                  <button onClick={() => { setEditV(v); setVForm({ name: v.name, email: v.email, phone: v.phone, countryCode: v.countryCode || '+91', company: v.company, purpose: v.purpose, toMeet: v.toMeet, accompanying: v.accompanying || [] }); }} style={{ padding: '0.5rem', marginRight: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={16} /></button>
+                  <button onClick={() => { setEditV(v); setVForm({ prefix: v.prefix || 'Mr', name: v.name, email: v.email, phone: v.phone, countryCode: v.countryCode || '+91', company: v.company, purpose: v.purpose, toMeet: v.toMeet, accompanying: v.accompanying || [] }); }} style={{ padding: '0.5rem', marginRight: '0.5rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Edit2 size={16} /></button>
                   <button onClick={async () => { 
   if (confirm('Delete?')) {
     try {
@@ -1407,12 +1439,14 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             {b.status.toUpperCase()}
           </span>
         </div>
-        {b.status === 'pending' && (
-          <div style={{ display: 'flex', gap: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          {b.status === 'pending' && <>
             <button onClick={() => { const m = prompt('Approval message (optional):'); if (m !== null) updateBooking(b.id, 'approved', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(13, 140, 79, 0.1)', color: '#059669', border: '2px solid #059669', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><CheckCircle size={18} style={{ verticalAlign: 'middle' }} /> Approve</button>
             <button onClick={() => { const m = prompt('Rejection reason:'); if (m) updateBooking(b.id, 'rejected', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: '2px solid #dc2626', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><XCircle size={18} style={{ verticalAlign: 'middle' }} /> Reject</button>
-            <button onClick={async () => { 
-  if (confirm('Delete?')) {
+          </>}
+          <button onClick={() => { setEditB(b); setTab('edit-b'); }} style={{ padding: '0.75rem 1rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Edit2 size={18} /></button>
+          <button onClick={async () => { 
+  if (confirm('Delete this booking?')) {
     try {
       await deleteBooking(b.firebaseId);
       setBookings(bookings.filter(x => x.firebaseId !== b.firebaseId));
@@ -1422,8 +1456,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     }
   }
 }} style={{ padding: '0.75rem 1rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Trash2 size={18} /></button>
-          </div>
-        )}
+        </div>
       </div>
     )) : <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No bookings yet</p>}
   </div>
@@ -1481,12 +1514,14 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             {c.status.toUpperCase()}
           </span>
         </div>
-        {c.status === 'pending' && (
-          <div style={{ display: 'flex', gap: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          {c.status === 'pending' && <>
             <button onClick={() => { const m = prompt('Approval message (optional):'); if (m !== null) updateCowork(c.id, 'approved', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(13, 140, 79, 0.1)', color: '#059669', border: '2px solid #059669', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><CheckCircle size={18} style={{ verticalAlign: 'middle' }} /> Approve</button>
             <button onClick={() => { const m = prompt('Rejection reason:'); if (m) updateCowork(c.id, 'rejected', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: '2px solid #dc2626', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><XCircle size={18} style={{ verticalAlign: 'middle' }} /> Reject</button>
-            <button onClick={async () => { 
-  if (confirm('Delete?')) {
+          </>}
+          <button onClick={() => { setEditC(c); setTab('edit-c'); }} style={{ padding: '0.75rem 1rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Edit2 size={18} /></button>
+          <button onClick={async () => { 
+  if (confirm('Delete this request?')) {
     try {
       await deleteCoworking(c.firebaseId);
       setCoworking(coworking.filter(x => x.firebaseId !== c.firebaseId));
@@ -1496,15 +1531,88 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     }
   }
 }} style={{ padding: '0.75rem 1rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Trash2 size={18} /></button>
-          </div>
-        )}
+        </div>
       </div>
     )) : <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No requests yet</p>}
   </div>
 )}
       </div>
 
-      {emailModal && (
+{tab === 'edit-b' && isAdmin && editB && (
+  <div style={card}>
+    <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1.5rem' }}>Edit Booking — {editB.id}</h2>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Organizer Name</label>
+        <input type="text" value={editB.organizerName} onChange={e => setEditB({...editB, organizerName: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Organization</label>
+        <input type="text" value={editB.organization} onChange={e => setEditB({...editB, organization: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Email</label>
+        <input type="email" value={editB.email} onChange={e => setEditB({...editB, email: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Phone</label>
+        <input type="tel" value={editB.fullPhone || editB.phone} onChange={e => setEditB({...editB, fullPhone: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date</label>
+        <input type="date" value={editB.date} onChange={e => setEditB({...editB, date: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Start Time</label>
+        <input type="time" value={editB.start} onChange={e => setEditB({...editB, start: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>End Time</label>
+        <input type="time" value={editB.end} onChange={e => setEditB({...editB, end: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Attendees</label>
+        <input type="number" value={editB.attendees} onChange={e => setEditB({...editB, attendees: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose</label>
+        <input type="text" value={editB.purpose} onChange={e => setEditB({...editB, purpose: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Status</label>
+        <select value={editB.status} onChange={e => setEditB({...editB, status: e.target.value})} style={inp}>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select></div>
+      <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Special Requirements</label>
+        <textarea value={editB.req || ''} onChange={e => setEditB({...editB, req: e.target.value})} style={{ ...inp, minHeight: '80px' }} /></div>
+    </div>
+    <div style={{ display: 'flex', gap: '1rem' }}>
+      <button onClick={async () => { try { await updateBookingFirebase(editB.firebaseId, editB); setBookings(bookings.map(x => x.firebaseId === editB.firebaseId ? editB : x)); setEditB(null); setTab('admin-b'); alert('Booking updated!'); } catch(e) { alert('Error updating booking!'); } }} style={{ ...btn, flex: 1 }}>Save Changes</button>
+      <button onClick={() => { setEditB(null); setTab('admin-b'); }} style={{ ...btn, flex: 1, background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>
+    </div>
+  </div>
+)}
+
+{tab === 'edit-c' && isAdmin && editC && (
+  <div style={card}>
+    <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1.5rem' }}>Edit Coworking Request — {editC.id}</h2>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Name</label>
+        <input type="text" value={editC.name} onChange={e => setEditC({...editC, name: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Company</label>
+        <input type="text" value={editC.company} onChange={e => setEditC({...editC, company: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Email</label>
+        <input type="email" value={editC.email} onChange={e => setEditC({...editC, email: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Phone</label>
+        <input type="tel" value={editC.fullPhone || editC.phone} onChange={e => setEditC({...editC, fullPhone: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Seats</label>
+        <input type="number" value={editC.seats} onChange={e => setEditC({...editC, seats: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Start Date</label>
+        <input type="date" value={editC.startDate} onChange={e => setEditC({...editC, startDate: e.target.value})} style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Duration</label>
+        <select value={editC.duration} onChange={e => setEditC({...editC, duration: e.target.value})} style={inp}>
+          {['daily','weekly','monthly','quarterly'].map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase()+d.slice(1)}</option>)}
+        </select></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Status</label>
+        <select value={editC.status} onChange={e => setEditC({...editC, status: e.target.value})} style={inp}>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select></div>
+      <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose</label>
+        <textarea value={editC.purpose} onChange={e => setEditC({...editC, purpose: e.target.value})} style={{ ...inp, minHeight: '80px' }} /></div>
+    </div>
+    <div style={{ display: 'flex', gap: '1rem' }}>
+      <button onClick={async () => { try { await updateCoworkingFirebase(editC.firebaseId, editC); setCoworking(coworking.map(x => x.firebaseId === editC.firebaseId ? editC : x)); setEditC(null); setTab('admin-c'); alert('Coworking request updated!'); } catch(e) { alert('Error updating!'); } }} style={{ ...btn, flex: 1 }}>Save Changes</button>
+      <button onClick={() => { setEditC(null); setTab('admin-c'); }} style={{ ...btn, flex: 1, background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>
+    </div>
+  </div>
+)}
+
+            {emailModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: '#ffffff', borderRadius: '12px', padding: '2rem', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto', border: '2px solid #2B4C7E' }}>
             <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginTop: 0 }}>📧 Email Notification</h2>
