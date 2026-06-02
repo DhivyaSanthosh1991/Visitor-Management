@@ -1215,7 +1215,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             </tr>
           </thead>
           <tbody>
-            {[...getFilteredVisitors()].sort((a, b) => (a.id || '').localeCompare(b.id || '')).map((v, i) => (
+            {[...getFilteredVisitors()].sort((a, b) => (b.id || '').localeCompare(a.id || '')).map((v, i) => (
               <tr key={v.id} style={{ borderBottom: '1px solid #e5e7eb', background: i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
                 <td style={{ padding: '0.75rem', color: '#6b7280', fontSize: '0.85rem' }}>{v.id}</td>
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.prefix ? `${v.prefix}. ${v.name}` : v.name}</td>
