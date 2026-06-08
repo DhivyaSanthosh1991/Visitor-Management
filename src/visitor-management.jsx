@@ -1424,7 +1424,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       ))}
     </div>
-    {bookings.length > 0 ? getFilteredBookings().map(b => (
+    {bookings.length > 0 ? [...getFilteredBookings()].sort((a, b) => (b.submitted || '').localeCompare(a.submitted || '')).map(b => (
       <div key={b.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
@@ -1499,7 +1499,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       ))}
     </div>
-    {coworking.length > 0 ? getFilteredCoworking().map(c => (
+    {coworking.length > 0 ? [...getFilteredCoworking()].sort((a, b) => (b.submitted || '').localeCompare(a.submitted || '')).map(c => (
       <div key={c.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
