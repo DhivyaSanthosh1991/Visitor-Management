@@ -27,6 +27,8 @@ const [visitorSearch, setVisitorSearch] = useState('');
 const [visitorDateFrom, setVisitorDateFrom] = useState('');
 const [visitorDateTo, setVisitorDateTo] = useState('');
 const [selectedVisitors, setSelectedVisitors] = useState([]);
+const [visitorSortField, setVisitorSortField] = useState('id');
+const [visitorSortDir, setVisitorSortDir] = useState('asc');
 const [bookingSearch, setBookingSearch] = useState('');
 const [bookingStatusFilter, setBookingStatusFilter] = useState('all');
 const [coworkingSearch, setCoworkingSearch] = useState('');
@@ -147,7 +149,46 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       return matchesSearch && matchesStatus;
     });
   };
+// Parse visitor ID into sortable value: V-DDMMYYYY-SEQ → YYYYMMDD + SEQ
+  const parseVisitorId = (id) => {
+    try {
+      const parts = (id || '').split('-');
+      const d = parts[1] || '01012000000';
+      return (
+        parseInt(d.slice(4, 8)) * 100000000 +
+        parseInt(d.slice(2, 4)) * 1000000 +
+        parseInt(d.slice(0, 2)) * 10000 +
+        parseInt(parts[2] || '0')
+      );
+    } catch { return 0; }
+  };
 
+  // Parse time string DD/MM/YYYY, HH:MM:SS to Date
+  const parseVisitorTime = (t) => {
+    try {
+      const parts = (t || '').split(',')[0].trim().split('/');
+      if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+    } catch {}
+    return new Date(0);
+  };
+
+  const getSortedVisitors = () => {
+    return [...getFilteredVisitors()].sort((a, b) => {
+      let cmp = 0;
+      if (visitorSortField === 'id') {
+        cmp = parseVisitorId(a.id) - parseVisitorId(b.id);
+      } else if (visitorSortField === 'time') {
+        cmp = parseVisitorTime(a.time) - parseVisitorTime(b.time);
+      } else if (visitorSortField === 'name') {
+        cmp = (a.name || '').localeCompare(b.name || '');
+      } else if (visitorSortField === 'company') {
+        cmp = (a.company || '').localeCompare(b.company || '');
+      } else if (visitorSortField === 'toMeet') {
+        cmp = (a.toMeet || '').localeCompare(b.toMeet || '');
+      }
+      return visitorSortDir === 'asc' ? cmp : -cmp;
+    });
+  };
  // Load data from Firebase
   useEffect(() => {
     const loadData = async () => {
@@ -535,17 +576,20 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   });
   
   // Sort data by ID first
-  // Sort by ID ascending, then by date ascending within same day
-  cleanedData.sort((a, b) => {
-    const idCompare = (a.id || '').localeCompare(b.id || '');
-    if (idCompare !== 0) return idCompare;
-    const parseDate = (t) => {
-      if (!t) return new Date(0);
-      const parts = t.split(',')[0].trim().split('/');
-      return parts.length === 3 ? new Date(`${parts[2]}-${parts[1]}-${parts[0]}`) : new Date(0);
-    };
-    return parseDate(a.time || a.submitted || a.startDate) - parseDate(b.time || b.submitted || b.startDate);
-  });
+ // Sort by ID correctly: extract DDMMYYYY from ID → sort as YYYYMMDD
+  const parseIdForSort = (id) => {
+    try {
+      const parts = (id || '').split('-');
+      const d = parts[1] || '01012000000';
+      return (
+        parseInt(d.slice(4, 8)) * 100000000 +
+        parseInt(d.slice(2, 4)) * 1000000 +
+        parseInt(d.slice(0, 2)) * 10000 +
+        parseInt(parts[2] || '0')
+      );
+    } catch { return 0; }
+  };
+  cleanedData.sort((a, b) => parseIdForSort(a.id) - parseIdForSort(b.id));
 
   // Remove updatedAt from all rows
   cleanedData.forEach(item => { delete item.updatedAt; });
@@ -1265,11 +1309,34 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
                   else setSelectedVisitors([]);
                 }} checked={selectedVisitors.length > 0 && selectedVisitors.length === getFilteredVisitors().length} />
               </th>
-              {['ID', 'Name', 'Email', 'Phone', 'Company', 'Purpose', 'To Meet', 'Date/Time', 'Actions'].map(h => <th key={h} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600' }}>{h}</th>)}
-            </tr>
+              {[
+                { label: 'ID', field: 'id' },
+                { label: 'Name', field: 'name' },
+                { label: 'Email', field: null },
+                { label: 'Phone', field: null },
+                { label: 'Company', field: 'company' },
+                { label: 'Purpose', field: null },
+                { label: 'To Meet', field: 'toMeet' },
+                { label: 'Date/Time', field: 'time' },
+                { label: 'Actions', field: null },
+              ].map(({ label, field }) => (
+                <th key={label} onClick={() => {
+                  if (!field) return;
+                  if (visitorSortField === field) setVisitorSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                  else { setVisitorSortField(field); setVisitorSortDir('asc'); }
+                }} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600', cursor: field ? 'pointer' : 'default', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                  {label}
+                  {field && visitorSortField === field && (
+                    <span style={{ marginLeft: '4px', fontSize: '0.75rem' }}>{visitorSortDir === 'asc' ? '▲' : '▼'}</span>
+                  )}
+                  {field && visitorSortField !== field && (
+                    <span style={{ marginLeft: '4px', fontSize: '0.75rem', color: '#d1d5db' }}>⇅</span>
+                  )}
+                </th>
+              ))}            </tr>
           </thead>
           <tbody>
-            {[...getFilteredVisitors()].sort((a, b) => (b.id || '').localeCompare(a.id || '')).map((v, i) => (
+            {getSortedVisitors().map((v, i) => (
               <tr key={v.id} style={{ borderBottom: '1px solid #e5e7eb', background: selectedVisitors.includes(v.firebaseId) ? 'rgba(45,74,126,0.07)' : i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
                 <td style={{ padding: '0.75rem' }}>
                   <input type="checkbox" checked={selectedVisitors.includes(v.firebaseId)} onChange={(e) => {
