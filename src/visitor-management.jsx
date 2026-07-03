@@ -24,6 +24,9 @@ const VisitorManagementSystem = () => {
   const [coworking, setCoworking] = useState([]);
   // Search/Filter states
 const [visitorSearch, setVisitorSearch] = useState('');
+const [visitorDateFrom, setVisitorDateFrom] = useState('');
+const [visitorDateTo, setVisitorDateTo] = useState('');
+const [selectedVisitors, setSelectedVisitors] = useState([]);
 const [bookingSearch, setBookingSearch] = useState('');
 const [bookingStatusFilter, setBookingStatusFilter] = useState('all');
 const [coworkingSearch, setCoworkingSearch] = useState('');
@@ -95,15 +98,27 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   };
 
   // ✅ FIX: Filter functions MOVED OUTSIDE exportToExcel
-  const getFilteredVisitors = () => {
-    return visitors.filter(v => 
-      v.id?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-      v.name?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-      v.company?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-      v.email?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-      v.time?.toLowerCase().includes(visitorSearch.toLowerCase())||
-      v.toMeet?.toLowerCase().includes(visitorSearch.toLowerCase())
-    );
+ const getFilteredVisitors = () => {
+    return visitors.filter(v => {
+      const matchesSearch =
+        v.id?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+        v.name?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+        v.company?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+        v.email?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+        v.time?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
+        v.toMeet?.toLowerCase().includes(visitorSearch.toLowerCase());
+
+      let matchesDate = true;
+      if (visitorDateFrom || visitorDateTo) {
+        const parts = v.time ? v.time.split(',')[0].trim().split('/') : null;
+        if (parts && parts.length === 3) {
+          const vDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+          if (visitorDateFrom) matchesDate = matchesDate && vDate >= new Date(visitorDateFrom);
+          if (visitorDateTo) matchesDate = matchesDate && vDate <= new Date(visitorDateTo);
+        }
+      }
+      return matchesSearch && matchesDate;
+    });
   };
 
   const getFilteredBookings = () => {
@@ -520,7 +535,17 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   });
   
   // Sort data by ID first
-  cleanedData.sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+  // Sort by ID ascending, then by date ascending within same day
+  cleanedData.sort((a, b) => {
+    const idCompare = (a.id || '').localeCompare(b.id || '');
+    if (idCompare !== 0) return idCompare;
+    const parseDate = (t) => {
+      if (!t) return new Date(0);
+      const parts = t.split(',')[0].trim().split('/');
+      return parts.length === 3 ? new Date(`${parts[2]}-${parts[1]}-${parts[0]}`) : new Date(0);
+    };
+    return parseDate(a.time || a.submitted || a.startDate) - parseDate(b.time || b.submitted || b.startDate);
+  });
 
   // Remove updatedAt from all rows
   cleanedData.forEach(item => { delete item.updatedAt; });
@@ -1155,24 +1180,47 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
 
 {tab === 'admin-v' && isAdmin && (
   <div style={card}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-  <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Visitor Management</h2>
-  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-    <div style={{ position: 'relative', minWidth: '250px' }}>
-      <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
-      <input 
-        type="text"
-        placeholder="Search by ID, Name, Company, Email, Date..."
-        value={visitorSearch}
-        onChange={(e) => setVisitorSearch(e.target.value)}
-        style={{ ...inp, paddingLeft: '2.5rem', minWidth: '300px' }}
-      />
+    <div style={{ marginBottom: '1.5rem' }}>
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
+    <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Visitor Management</h2>
+    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+      {selectedVisitors.length > 0 && (
+        <button onClick={async () => {
+          if (confirm(`Delete ${selectedVisitors.length} selected visitor(s)?`)) {
+            try {
+              for (const fid of selectedVisitors) { await deleteVisitor(fid); }
+              setVisitors(visitors.filter(v => !selectedVisitors.includes(v.firebaseId)));
+              setSelectedVisitors([]);
+            } catch(e) { alert('Error deleting!'); }
+          }
+        }} style={{ ...btn, background: '#dc2626', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Trash2 size={16} /> Delete Selected ({selectedVisitors.length})
+        </button>
+      )}
+      <button onClick={() => exportToExcel(getFilteredVisitors(), 'StartupTN_Visitors')} style={{ ...btn, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <Download size={18} /> Export to Excel
+      </button>
     </div>
-    <button onClick={() => exportToExcel(getFilteredVisitors(), 'StartupTN_Visitors')} style={btn}>
-      <Download size={18} style={{ marginRight: '0.5rem' }} /> Export to Excel
-    </button>
   </div>
-</div>    <h3 style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '2rem' }}>{editV ? 'Edit' : 'Add'} Visitor</h3>
+  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+    <div style={{ position: 'relative', flex: '2', minWidth: '220px' }}>
+      <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
+      <input type="text" placeholder="Search by ID, Name, Company, Email, To Meet..." value={visitorSearch} onChange={(e) => setVisitorSearch(e.target.value)} style={{ ...inp, paddingLeft: '2.5rem' }} />
+    </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <label style={{ color: '#6b7280', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>From:</label>
+      <input type="date" value={visitorDateFrom} onChange={(e) => setVisitorDateFrom(e.target.value)} style={{ ...inp, minWidth: '150px' }} />
+    </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <label style={{ color: '#6b7280', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>To:</label>
+      <input type="date" value={visitorDateTo} onChange={(e) => setVisitorDateTo(e.target.value)} style={{ ...inp, minWidth: '150px' }} />
+    </div>
+    {(visitorDateFrom || visitorDateTo) && (
+      <button onClick={() => { setVisitorDateFrom(''); setVisitorDateTo(''); }} style={{ ...btn, background: '#e5e7eb', color: '#1f2937', padding: '0.75rem 1rem' }}>Clear</button>
+    )}
+  </div>
+</div>    
+    <h3 style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '2rem' }}>{editV ? 'Edit' : 'Add'} Visitor</h3>
     <form onSubmit={submitV} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '0.5rem' }}>
         <select value={vForm.prefix} onChange={(e) => setVForm({ ...vForm, prefix: e.target.value })} style={inp}>
@@ -1211,12 +1259,24 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid #2B4C7E' }}>
+              <th style={{ padding: '0.75rem' }}>
+                <input type="checkbox" onChange={(e) => {
+                  if (e.target.checked) setSelectedVisitors(getFilteredVisitors().map(v => v.firebaseId).filter(Boolean));
+                  else setSelectedVisitors([]);
+                }} checked={selectedVisitors.length > 0 && selectedVisitors.length === getFilteredVisitors().length} />
+              </th>
               {['ID', 'Name', 'Email', 'Phone', 'Company', 'Purpose', 'To Meet', 'Date/Time', 'Actions'].map(h => <th key={h} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600' }}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
             {[...getFilteredVisitors()].sort((a, b) => (b.id || '').localeCompare(a.id || '')).map((v, i) => (
-              <tr key={v.id} style={{ borderBottom: '1px solid #e5e7eb', background: i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
+              <tr key={v.id} style={{ borderBottom: '1px solid #e5e7eb', background: selectedVisitors.includes(v.firebaseId) ? 'rgba(45,74,126,0.07)' : i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
+                <td style={{ padding: '0.75rem' }}>
+                  <input type="checkbox" checked={selectedVisitors.includes(v.firebaseId)} onChange={(e) => {
+                    if (e.target.checked) setSelectedVisitors([...selectedVisitors, v.firebaseId]);
+                    else setSelectedVisitors(selectedVisitors.filter(id => id !== v.firebaseId));
+                  }} />
+                </td>
                 <td style={{ padding: '0.75rem', color: '#6b7280', fontSize: '0.85rem' }}>{v.id}</td>
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.prefix ? `${v.prefix}. ${v.name}` : v.name}</td>
                 <td style={{ padding: '0.75rem', color: '#6b7280' }}>{v.email}</td>
