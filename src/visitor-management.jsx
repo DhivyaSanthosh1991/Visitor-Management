@@ -1336,7 +1336,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
               ))}            </tr>
           </thead>
           <tbody>
-            {getSortedVisitors().map((v, i) => (
+            {[...getFilteredVisitors()].sort((a, b) => parseVisitorId(b.id) - parseVisitorId(a.id)).map((v, i) => (
               <tr key={v.id} style={{ borderBottom: '1px solid #e5e7eb', background: selectedVisitors.includes(v.firebaseId) ? 'rgba(45,74,126,0.07)' : i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
                 <td style={{ padding: '0.75rem' }}>
                   <input type="checkbox" checked={selectedVisitors.includes(v.firebaseId)} onChange={(e) => {
@@ -1551,7 +1551,16 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       ))}
     </div>
-    {bookings.length > 0 ? [...getFilteredBookings()].sort((a, b) => (b.submitted || '').localeCompare(a.submitted || '')).map(b => (
+    {bookings.length > 0 ? [...getFilteredBookings()].sort((a, b) => {
+  const parseId = (id) => {
+    try {
+      const p = (id || '').split('-');
+      const d = p[1] || '01012000000';
+      return parseInt(d.slice(4,8)) * 100000000 + parseInt(d.slice(2,4)) * 1000000 + parseInt(d.slice(0,2)) * 10000 + parseInt(p[2] || '0');
+    } catch { return 0; }
+  };
+  return parseId(b.id) - parseId(a.id);
+}).map(b => (
       <div key={b.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
@@ -1626,7 +1635,16 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       ))}
     </div>
-    {coworking.length > 0 ? [...getFilteredCoworking()].sort((a, b) => (b.submitted || '').localeCompare(a.submitted || '')).map(c => (
+    {coworking.length > 0 ? [...getFilteredCoworking()].sort((a, b) => {
+  const parseId = (id) => {
+    try {
+      const p = (id || '').split('-');
+      const d = p[1] || '01012000000';
+      return parseInt(d.slice(4,8)) * 100000000 + parseInt(d.slice(2,4)) * 1000000 + parseInt(d.slice(0,2)) * 10000 + parseInt(p[2] || '0');
+    } catch { return 0; }
+  };
+  return parseId(b.id) - parseId(a.id);
+}).map(c => (
       <div key={c.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
