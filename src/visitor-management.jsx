@@ -8,7 +8,8 @@ import {
   getEvents, addEvent, updateEvent, deleteEvent,
   getHalls, addHall, updateHall, deleteHall,
   getBookings, addBooking, updateBooking as updateBookingFirebase, deleteBooking,
-  getCoworking, addCoworking, updateCoworking as updateCoworkingFirebase, deleteCoworking
+  getCoworking, addCoworking, updateCoworking as updateCoworkingFirebase, deleteCoworking,
+  addCoworkingMember, getCoworkingMembers, deleteCoworkingMember
 } from './firebaseUtils';
 
 const VisitorManagementSystem = () => {
@@ -43,8 +44,16 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     date: '', start: '', end: '', attendees: '', req: '' 
   });
   const [cForm, setCForm] = useState({ 
-    name: '', email: '', phone: '', countryCode: '+91', 
-    company: '', seats: '', duration: '', startDate: '', purpose: '' 
+    name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '',
+    company: '', designation: '', gender: '', seats: '', duration: '', startDate: '', purpose: '' 
+  });
+  const [coworkingMembers, setCoworkingMembers] = useState([]);
+  const [memberForm, setMemberForm] = useState({
+    bookingId: '', slNo: '', name: '', designation: '', 
+    contactNumber: '', alternateContact: '', email: '', 
+    gender: '', aadharNo: '', dob: '', maritalStatus: '', 
+    bloodGroup: '', fatherName: '', permanentAddress: '', 
+    communicationAddress: '', officeAddress: ''
   });
   const [regForm, setRegForm] = useState({ 
     eventId: '', name: '', email: '', phone: '', countryCode: '+91', 
@@ -193,12 +202,13 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [visitorsData, eventsData, hallsData, bookingsData, coworkingData] = await Promise.all([
+        const [visitorsData, eventsData, hallsData, bookingsData, coworkingData, membersData] = await Promise.all([
           getVisitors(),
           getEvents(),
           getHalls(),
           getBookings(),
-          getCoworking()
+          getCoworking(),
+          getCoworkingMembers()
         ]);
         
         setVisitors(visitorsData);
@@ -206,6 +216,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         setHalls(hallsData);
         setBookings(bookingsData);
         setCoworking(coworkingData);
+        setCoworkingMembers(membersData);
       } catch (err) {
         console.error('Error loading from Firebase:', err);
       }
@@ -405,11 +416,49 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         status: 'pending', 
         submitted: new Date().toLocaleString() 
       };
-      
+
+      const submitMember = async (e) => {
+    e.preventDefault();
+    if (!memberForm.bookingId.trim()) {
+      alert('Please enter your Booking ID');
+      return;
+    }
+    // Verify booking ID exists and is approved
+    const booking = coworking.find(c => c.id === memberForm.bookingId.trim());
+    if (!booking) {
+      alert('Booking ID not found. Please check and try again.');
+      return;
+    }
+    if (booking.status !== 'approved') {
+      alert('Your coworking booking is not yet approved. Please wait for approval before registering members.');
+      return;
+    }
+    try {
+      const member = {
+        ...memberForm,
+        bookingId: memberForm.bookingId.trim(),
+        company: booking.company,
+        submittedAt: new Date().toLocaleString()
+      };
+      const newMember = await addCoworkingMember(member);
+      setCoworkingMembers([...coworkingMembers, newMember]);
+      setMemberForm({
+        bookingId: '', slNo: '', name: '', designation: '',
+        contactNumber: '', alternateContact: '', email: '',
+        gender: '', aadharNo: '', dob: '', maritalStatus: '',
+        bloodGroup: '', fatherName: '', permanentAddress: '',
+        communicationAddress: '', officeAddress: ''
+      });
+      alert('Member registered successfully!');
+      setTab('home');
+    } catch (error) {
+      console.error('Error registering member:', error);
+      alert('Error registering member!');
+    }
+  };
       const newCoworking = await addCoworking(c);
       setCoworking([...coworking, newCoworking]);
-      
-      setCForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', seats: '', duration: '', startDate: '', purpose: '' }); 
+      setCForm({ name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '', company: '', designation: '', gender: '', seats: '', duration: '', startDate: '', purpose: '' }); 
       alert('Request submitted! Coworking ID: ' + c.id); 
       setTab('home');
     } catch (error) {
@@ -669,6 +718,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <button onClick={() => setTab('e-reg')} style={{ padding: '0.75rem 1.5rem', background: tab === 'e-reg' ? '#2B4C7E' : 'transparent', color: tab === 'e-reg' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'e-reg' ? '600' : '500', borderBottom: tab === 'e-reg' ? '3px solid #F5A623' : 'none' }}>Event Registration</button>
             <button onClick={() => setTab('h-book')} style={{ padding: '0.75rem 1.5rem', background: tab === 'h-book' ? '#2B4C7E' : 'transparent', color: tab === 'h-book' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'h-book' ? '600' : '500', borderBottom: tab === 'h-book' ? '3px solid #F5A623' : 'none' }}>Hall Booking</button>
             <button onClick={() => setTab('cowork')} style={{ padding: '0.75rem 1.5rem', background: tab === 'cowork' ? '#2B4C7E' : 'transparent', color: tab === 'cowork' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'cowork' ? '600' : '500', borderBottom: tab === 'cowork' ? '3px solid #F5A623' : 'none' }}>Coworking</button>
+            <button onClick={() => setTab('cowork-member')} style={{ padding: '0.75rem 1.5rem', background: tab === 'cowork-member' ? '#2B4C7E' : 'transparent', color: tab === 'cowork-member' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'cowork-member' ? '600' : '500', borderBottom: tab === 'cowork-member' ? '3px solid #F5A623' : 'none' }}>Member Registration</button>
             <button onClick={() => setTab('login')} style={{ padding: '0.75rem 1.5rem', background: tab === 'login' ? '#2B4C7E' : 'transparent', color: tab === 'login' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'login' ? '600' : '500', borderBottom: tab === 'login' ? '3px solid #F5A623' : 'none' }}>Admin</button>
           </>
         ) : (
@@ -678,7 +728,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <button onClick={() => setTab('admin-h')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-h' ? '#2B4C7E' : 'transparent', color: tab === 'admin-h' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-h' ? '600' : '500', borderBottom: tab === 'admin-h' ? '3px solid #F5A623' : 'none' }}>Halls</button>
             <button onClick={() => setTab('admin-b')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-b' ? '#2B4C7E' : 'transparent', color: tab === 'admin-b' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-b' ? '600' : '500', borderBottom: tab === 'admin-b' ? '3px solid #F5A623' : 'none' }}>Bookings</button>
             <button onClick={() => setTab('admin-c')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-c' ? '#2B4C7E' : 'transparent', color: tab === 'admin-c' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-c' ? '600' : '500', borderBottom: tab === 'admin-c' ? '3px solid #F5A623' : 'none' }}>Coworking</button>
-          </>
+            <button onClick={() => setTab('admin-cm')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-cm' ? '#2B4C7E' : 'transparent', color: tab === 'admin-cm' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-cm' ? '600' : '500', borderBottom: tab === 'admin-cm' ? '3px solid #F5A623' : 'none' }}>Members</button>          </>
         )}
       </div>
 
@@ -1192,6 +1242,21 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
           {['daily', 'weekly', 'monthly', 'quarterly'].map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
         </select>
       </div>
+     <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Designation *</label>
+        <input type="text" value={cForm.designation} onChange={(e) => setCForm({ ...cForm, designation: e.target.value })} required style={inp} placeholder="e.g. CEO, Manager" />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Gender *</label>
+        <select value={cForm.gender} onChange={(e) => setCForm({ ...cForm, gender: e.target.value })} required style={inp}>
+          <option value="">Select</option>
+          {['Male', 'Female', 'Other'].map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Alternate Contact Number</label>
+        <input type="tel" value={cForm.alternatePhone} onChange={(e) => setCForm({ ...cForm, alternatePhone: e.target.value.replace(/\D/g, '') })} maxLength="10" style={inp} placeholder="Optional" />
+      </div>
       <div style={{ gridColumn: '1 / -1' }}>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose *</label>
         <textarea value={cForm.purpose} onChange={(e) => setCForm({ ...cForm, purpose: e.target.value })} required style={{ ...inp, minHeight: '100px' }} />
@@ -1221,7 +1286,87 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     </div>
   </div>
 )}
-
+{tab === 'cowork-member' && (
+  <div style={card}>
+    <button onClick={() => setTab('home')} style={{ ...btn, marginBottom: '1rem' }}>← Back</button>
+    <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '0.5rem' }}>Coworking Member Registration</h2>
+    <p style={{ color: '#6b7280', marginBottom: '1.5rem', fontSize: '0.95rem' }}>Team members using the coworking space must fill this form. You will need the Booking ID from your incharge.</p>
+    <form onSubmit={submitMember} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+      <div style={{ gridColumn: '1 / -1', background: '#EFF6FF', border: '2px solid #2B4C7E', borderRadius: '8px', padding: '1rem' }}>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '700' }}>Booking ID * <span style={{ fontWeight: '400', fontSize: '0.85rem' }}>(Get this from your incharge — e.g. C-01072026-001)</span></label>
+        <input type="text" value={memberForm.bookingId} onChange={(e) => setMemberForm({ ...memberForm, bookingId: e.target.value })} required style={inp} placeholder="e.g. C-01072026-001" />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Full Name *</label>
+        <input type="text" value={memberForm.name} onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })} required style={inp} />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Designation *</label>
+        <input type="text" value={memberForm.designation} onChange={(e) => setMemberForm({ ...memberForm, designation: e.target.value })} required style={inp} />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Contact Number *</label>
+        <input type="tel" value={memberForm.contactNumber} onChange={(e) => setMemberForm({ ...memberForm, contactNumber: e.target.value.replace(/\D/g, '') })} maxLength="10" required style={inp} />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Alternate Contact Number</label>
+        <input type="tel" value={memberForm.alternateContact} onChange={(e) => setMemberForm({ ...memberForm, alternateContact: e.target.value.replace(/\D/g, '') })} maxLength="10" style={inp} />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Email ID *</label>
+        <input type="email" value={memberForm.email} onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })} required style={inp} />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Gender *</label>
+        <select value={memberForm.gender} onChange={(e) => setMemberForm({ ...memberForm, gender: e.target.value })} required style={inp}>
+          <option value="">Select</option>
+          {['Male', 'Female', 'Other'].map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Aadhar Number *</label>
+        <input type="text" value={memberForm.aadharNo} onChange={(e) => setMemberForm({ ...memberForm, aadharNo: e.target.value.replace(/\D/g, '') })} maxLength="12" required style={inp} placeholder="12-digit Aadhar number" />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date of Birth *</label>
+        <input type="date" value={memberForm.dob} onChange={(e) => setMemberForm({ ...memberForm, dob: e.target.value })} required style={inp} />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Marital Status</label>
+        <select value={memberForm.maritalStatus} onChange={(e) => setMemberForm({ ...memberForm, maritalStatus: e.target.value })} style={inp}>
+          <option value="">Select</option>
+          {['Single', 'Married', 'Divorced', 'Widowed'].map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Blood Group</label>
+        <select value={memberForm.bloodGroup} onChange={(e) => setMemberForm({ ...memberForm, bloodGroup: e.target.value })} style={inp}>
+          <option value="">Select</option>
+          {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Father's Name *</label>
+        <input type="text" value={memberForm.fatherName} onChange={(e) => setMemberForm({ ...memberForm, fatherName: e.target.value })} required style={inp} />
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Permanent Address *</label>
+        <textarea value={memberForm.permanentAddress} onChange={(e) => setMemberForm({ ...memberForm, permanentAddress: e.target.value })} required style={{ ...inp, minHeight: '80px' }} />
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Communication Address</label>
+        <textarea value={memberForm.communicationAddress} onChange={(e) => setMemberForm({ ...memberForm, communicationAddress: e.target.value })} style={{ ...inp, minHeight: '80px' }} placeholder="If different from permanent address" />
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Office Address</label>
+        <textarea value={memberForm.officeAddress} onChange={(e) => setMemberForm({ ...memberForm, officeAddress: e.target.value })} style={{ ...inp, minHeight: '80px' }} />
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <button type="submit" style={{ ...btn, width: '100%' }}>Submit Member Details</button>
+      </div>
+    </form>
+  </div>
+)}
 {tab === 'admin-v' && isAdmin && (
   <div style={card}>
     <div style={{ marginBottom: '1.5rem' }}>
@@ -1757,7 +1902,87 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     </div>
   </div>
 )}
-
+{tab === 'admin-cm' && isAdmin && (
+  <div style={card}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+      <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Coworking Members ({coworkingMembers.length})</h2>
+      <button onClick={() => exportToExcel(coworkingMembers, 'StartupTN_CoworkingMembers')} style={{ ...btn, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <Download size={18} /> Export Excel
+      </button>
+    </div>
+    {coworking.length > 0 ? (
+      [...coworking].sort((a, b) => {
+        const parseId = (id) => { try { const p = (id||'').split('-'); const d = p[1]||'01012000000'; return parseInt(d.slice(4,8))*100000000+parseInt(d.slice(2,4))*1000000+parseInt(d.slice(0,2))*10000+parseInt(p[2]||'0'); } catch{return 0;} };
+        return parseId(b.id) - parseId(a.id);
+      }).map(cw => {
+        const members = coworkingMembers.filter(m => m.bookingId === cw.id);
+        return (
+          <div key={cw.id} style={{ background: '#f3f4f6', borderRadius: '8px', marginBottom: '1.5rem', border: `2px solid ${cw.status === 'approved' ? '#059669' : '#e5e7eb'}`, overflow: 'hidden' }}>
+            <div style={{ background: cw.status === 'approved' ? 'rgba(5,150,105,0.08)' : '#ffffff', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <span style={{ color: '#2B4C7E', fontWeight: '700', fontSize: '1rem' }}>{cw.id}</span>
+                <span style={{ color: '#6b7280', marginLeft: '1rem' }}>{cw.name} — {cw.company}</span>
+                <span style={{ color: '#6b7280', marginLeft: '1rem', fontSize: '0.9rem' }}>Seats: {cw.seats} | Start: {cw.startDate}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: '600', background: cw.status === 'approved' ? 'rgba(5,150,105,0.1)' : 'rgba(245,166,35,0.1)', color: cw.status === 'approved' ? '#059669' : '#F5A623' }}>{cw.status.toUpperCase()}</span>
+                <span style={{ color: '#2B4C7E', fontWeight: '600', fontSize: '0.9rem' }}>Members: {members.length} / {cw.seats}</span>
+              </div>
+            </div>
+            {members.length > 0 ? (
+              <div style={{ overflowX: 'auto', padding: '0 1rem 1rem' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #2B4C7E' }}>
+                      {['#', 'Name', 'Designation', 'Contact', 'Alt Contact', 'Email', 'Gender', 'Aadhar', 'DOB', 'Marital', 'Blood', "Father's Name", 'Permanent Address', 'Communication Address', 'Office Address', 'Action'].map(h => (
+                        <th key={h} style={{ padding: '0.5rem 0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((m, idx) => (
+                      <tr key={m.firebaseId} style={{ borderBottom: '1px solid #e5e7eb', background: idx % 2 === 0 ? '#ffffff' : '#f9fafb' }}>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{idx + 1}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#1f2937', whiteSpace: 'nowrap' }}>{m.name}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.designation}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.contactNumber}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.alternateContact || '—'}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.email}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.gender}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.aadharNo}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.dob}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.maritalStatus || '—'}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.bloodGroup || '—'}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.fatherName}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '150px' }}>{m.permanentAddress}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '150px' }}>{m.communicationAddress || '—'}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '150px' }}>{m.officeAddress || '—'}</td>
+                        <td style={{ padding: '0.5rem 0.75rem' }}>
+                          <button onClick={async () => {
+                            if (confirm('Delete this member?')) {
+                              try {
+                                await deleteCoworkingMember(m.firebaseId);
+                                setCoworkingMembers(coworkingMembers.filter(x => x.firebaseId !== m.firebaseId));
+                              } catch(e) { alert('Error deleting!'); }
+                            }
+                          }} style={{ padding: '0.35rem 0.6rem', background: 'rgba(220,38,38,0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p style={{ color: '#6b7280', padding: '1rem 1.5rem', margin: 0, fontStyle: 'italic' }}>No members registered yet for this booking.</p>
+            )}
+          </div>
+        );
+      })
+    ) : <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No coworking bookings yet.</p>}
+  </div>
+)}
             {emailModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: '#ffffff', borderRadius: '12px', padding: '2rem', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto', border: '2px solid #2B4C7E' }}>
