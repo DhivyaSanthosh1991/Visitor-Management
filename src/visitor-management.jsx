@@ -418,45 +418,6 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         submitted: new Date().toLocaleString() 
       };
 
-      const submitMember = async (e) => {
-    e.preventDefault();
-    if (!memberForm.bookingId.trim()) {
-      alert('Please enter your Booking ID');
-      return;
-    }
-    // Verify booking ID exists and is approved
-    const booking = coworking.find(c => c.id === memberForm.bookingId.trim());
-    if (!booking) {
-      alert('Booking ID not found. Please check and try again.');
-      return;
-    }
-    if (booking.status !== 'approved') {
-      alert('Your coworking booking is not yet approved. Please wait for approval before registering members.');
-      return;
-    }
-    try {
-      const member = {
-        ...memberForm,
-        bookingId: memberForm.bookingId.trim(),
-        company: booking.company,
-        submittedAt: new Date().toLocaleString()
-      };
-      const newMember = await addCoworkingMember(member);
-      setCoworkingMembers([...coworkingMembers, newMember]);
-      setMemberForm({
-        bookingId: '', slNo: '', name: '', designation: '',
-        contactNumber: '', alternateContact: '', email: '',
-        gender: '', aadharNo: '', dob: '', maritalStatus: '',
-        bloodGroup: '', fatherName: '', permanentAddress: '',
-        communicationAddress: '', officeAddress: ''
-      });
-      alert('Member registered successfully!');
-      setTab('home');
-    } catch (error) {
-      console.error('Error registering member:', error);
-      alert('Error registering member!');
-    }
-  };
       const newCoworking = await addCoworking(c);
       setCoworking([...coworking, newCoworking]);
       setCForm({ name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '', company: '', designation: '', gender: '', seats: '', duration: '', startDate: '', purpose: '' }); 
@@ -514,6 +475,46 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   const sendEmail = (to, subject, body) => {
     setEmailModal({ to, subject, body });
   };
+
+ const submitMember = async (e) => {
+    e.preventDefault();
+    if (!memberForm.bookingId.trim()) {
+      alert('Please enter your Booking ID');
+      return;
+    }
+    // Verify booking ID exists and is approved
+    const booking = coworking.find(c => c.id === memberForm.bookingId.trim());
+    if (!booking) {
+      alert('Booking ID not found. Please check and try again.');
+      return;
+    }
+    if (booking.status !== 'approved') {
+      alert('Your coworking booking is not yet approved. Please wait for approval before registering members.');
+      return;
+    }
+    try {
+      const member = {
+        ...memberForm,
+        bookingId: memberForm.bookingId.trim(),
+        company: booking.company,
+        submittedAt: new Date().toLocaleString()
+      };
+      const newMember = await addCoworkingMember(member);
+      setCoworkingMembers([...coworkingMembers, newMember]);
+      setMemberForm({
+        bookingId: '', slNo: '', name: '', designation: '',
+        contactNumber: '', alternateContact: '', email: '',
+        gender: '', aadharNo: '', dob: '', maritalStatus: '',
+        bloodGroup: '', fatherName: '', permanentAddress: '',
+        communicationAddress: '', officeAddress: ''
+      });
+      alert('Member registered successfully!');
+      setTab('home');
+    } catch (error) {
+      console.error('Error registering member:', error);
+      alert('Error registering member!');
+    }
+  }; 
   
  const updateBooking = async (id, status, msg = '') => { 
     try {
@@ -1781,7 +1782,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       ))}
     </div>
-    {coworking.length > 0 ? [...getFilteredCoworking()].sort((a, b) => {
+   {coworking.length > 0 ? [...getFilteredCoworking()].sort((a, b) => {
   const parseId = (id) => {
     try {
       const p = (id || '').split('-');
@@ -1790,7 +1791,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     } catch { return 0; }
   };
   return parseId(b.id) - parseId(a.id);
-}).map(c => (
+}).map(cw => (
       <div key={c.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
@@ -1828,7 +1829,6 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     )) : <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No requests yet</p>}
   </div>
 )}
-      </div>
 
 {tab === 'edit-b' && isAdmin && editB && (
   <div style={card}>
