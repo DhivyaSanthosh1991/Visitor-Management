@@ -358,4 +358,40 @@ export const getUpcomingEvents = async () => {
     console.error('Error getting upcoming events:', error);
     throw error;
   }
+  // ==================== COWORKING MEMBERS ====================
+
+export const addCoworkingMember = async (memberData) => {
+  try {
+    const docRef = await addDoc(collection(db, 'coworkingMembers'), {
+      ...memberData,
+      createdAt: new Date().toISOString()
+    });
+    return { firebaseId: docRef.id, ...memberData };
+  } catch (error) {
+    console.error('Error adding coworking member:', error);
+    throw error;
+  }
+};
+
+export const getCoworkingMembers = async () => {
+  try {
+    const querySnapshot = await getDocs(collection(db, 'coworkingMembers'));
+    return querySnapshot.docs.map(doc => ({
+      firebaseId: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error getting coworking members:', error);
+    throw error;
+  }
+};
+
+export const deleteCoworkingMember = async (firebaseId) => {
+  try {
+    await deleteDoc(doc(db, 'coworkingMembers', firebaseId));
+  } catch (error) {
+    console.error('Error deleting coworking member:', error);
+    throw error;
+  }
+};
 };
