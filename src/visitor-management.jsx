@@ -65,6 +65,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   const [editH, setEditH] = useState(null);
   const [editB, setEditB] = useState(null);
   const [editC, setEditC] = useState(null);
+  const [expandedCompany, setExpandedCompany] = useState(null);
   
   // Generate auto ID
   const generateId = (prefix, existingItems) => {
