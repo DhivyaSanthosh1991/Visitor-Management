@@ -427,6 +427,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       console.error('Error submitting coworking:', error);
       alert('Error submitting coworking!');
     }
+  
   };
   
  const submitReg = async (e) => { 
@@ -1791,7 +1792,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     } catch { return 0; }
   };
   return parseId(b.id) - parseId(a.id);
-}).map(cw => (
+}).map(c => (
       <div key={c.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
@@ -1984,6 +1985,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     ) : <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No coworking bookings yet.</p>}
   </div>
 )}
+        </div>
             {emailModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: '#ffffff', borderRadius: '12px', padding: '2rem', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto', border: '2px solid #2B4C7E' }}>
