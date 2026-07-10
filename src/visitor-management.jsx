@@ -721,7 +721,6 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <button onClick={() => setTab('e-reg')} style={{ padding: '0.75rem 1.5rem', background: tab === 'e-reg' ? '#2B4C7E' : 'transparent', color: tab === 'e-reg' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'e-reg' ? '600' : '500', borderBottom: tab === 'e-reg' ? '3px solid #F5A623' : 'none' }}>Event Registration</button>
             <button onClick={() => setTab('h-book')} style={{ padding: '0.75rem 1.5rem', background: tab === 'h-book' ? '#2B4C7E' : 'transparent', color: tab === 'h-book' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'h-book' ? '600' : '500', borderBottom: tab === 'h-book' ? '3px solid #F5A623' : 'none' }}>Hall Booking</button>
             <button onClick={() => setTab('cowork')} style={{ padding: '0.75rem 1.5rem', background: tab === 'cowork' ? '#2B4C7E' : 'transparent', color: tab === 'cowork' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'cowork' ? '600' : '500', borderBottom: tab === 'cowork' ? '3px solid #F5A623' : 'none' }}>Coworking</button>
-            <button onClick={() => setTab('cowork-member')} style={{ padding: '0.75rem 1.5rem', background: tab === 'cowork-member' ? '#2B4C7E' : 'transparent', color: tab === 'cowork-member' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'cowork-member' ? '600' : '500', borderBottom: tab === 'cowork-member' ? '3px solid #F5A623' : 'none' }}>Member Registration</button>
             <button onClick={() => setTab('login')} style={{ padding: '0.75rem 1.5rem', background: tab === 'login' ? '#2B4C7E' : 'transparent', color: tab === 'login' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'login' ? '600' : '500', borderBottom: tab === 'login' ? '3px solid #F5A623' : 'none' }}>Admin</button>
           </>
         ) : (
@@ -1268,6 +1267,18 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <button type="submit" style={{ ...btn, width: '100%' }}>Submit Request</button>
       </div>
     </form>
+
+    <div style={{ marginTop: '2rem', padding: '1.5rem', background: '#EFF6FF', border: '2px solid #2B4C7E', borderRadius: '10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h3 style={{ color: '#2B4C7E', fontWeight: '700', margin: '0 0 0.25rem' }}>Team Member Registration</h3>
+          <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>Already have a Booking ID? Register your team members here.</p>
+        </div>
+        <button onClick={() => setTab('cowork-member')} style={{ ...btn, background: '#F5A623', whiteSpace: 'nowrap' }}>
+          + Register Members
+        </button>
+      </div>
+    </div>
   </div>
 )}
 
