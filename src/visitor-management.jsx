@@ -1279,7 +1279,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       </div>
       <div style={{ gridColumn: '1 / -1' }}>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose *</label>
-        <textarea value={cForm.purpose} onChange={(e) => setCForm({ ...cForm, purpose: e.target.value })} required style={{ ...inp, minHeight: '100px' }} placeholder="Should be in details - Event Title" />
+        <textarea value={cForm.purpose} onChange={(e) => setCForm({ ...cForm, purpose: e.target.value })} required style={{ ...inp, minHeight: '100px' }} placeholder="Should be in details" />
       </div>
       <div style={{ gridColumn: '1 / -1' }}>
         <button type="submit" style={{ ...btn, width: '100%' }}>Submit Request</button>
