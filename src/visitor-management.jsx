@@ -38,14 +38,16 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   const [vForm, setVForm] = useState({ prefix: 'Mr', name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', toMeet: '', accompanying: [] });
   const [eForm, setEForm] = useState({ eventName: '', organizer: '', partner: '', type: '', date: '', start: '', end: '', venue: '', desc: '', max: '' });
   const [hForm, setHForm] = useState({ name: '', capacity: '', avail: 'available' });
-  const [bForm, setBForm] = useState({ 
+ const [bForm, setBForm] = useState({ 
     hallId: '', hallName: '', organizerName: '', email: '', 
     phone: '', countryCode: '+91', organization: '', purpose: '', 
-    date: '', start: '', end: '', attendees: '', req: '' 
+    date: '', start: '', end: '', attendees: '', req: '',
+    gstin: '', smartCard: ''
   });
-  const [cForm, setCForm] = useState({ 
+ const [cForm, setCForm] = useState({ 
     name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '',
-    company: '', designation: '', gender: '', seats: '', duration: '', startDate: '', purpose: '' 
+    company: '', designation: '', gender: '', seats: '', duration: '', startDate: '', purpose: '',
+    gstin: '', smartCard: ''
   });
   const [coworkingMembers, setCoworkingMembers] = useState([]);
   const [memberForm, setMemberForm] = useState({
@@ -384,7 +386,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       const newBooking = await addBooking(b);
       setBookings([...bookings, newBooking]);
       
-      setBForm({ hallId: '', hallName: '', organizerName: '', email: '', phone: '', countryCode: '+91', organization: '', purpose: '', date: '', start: '', end: '', attendees: '', req: '' }); 
+      setBForm({ hallId: '', hallName: '', organizerName: '', email: '', phone: '', countryCode: '+91', organization: '', purpose: '', date: '', start: '', end: '', attendees: '', req: '', gstin: '', smartCard: '' }); 
       alert('Booking submitted! Booking ID: ' + b.id); 
       setTab('home');
     } catch (error) {
@@ -420,7 +422,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
 
       const newCoworking = await addCoworking(c);
       setCoworking([...coworking, newCoworking]);
-      setCForm({ name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '', company: '', designation: '', gender: '', seats: '', duration: '', startDate: '', purpose: '' }); 
+     setCForm({ name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '', company: '', designation: '', gender: '', seats: '', duration: '', startDate: '', purpose: '', gstin: '', smartCard: '' }); 
       alert('Request submitted! Coworking ID: ' + c.id); 
       setTab('home');
     } catch (error) {
@@ -823,7 +825,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <input type="text" value={vForm.company} onChange={(e) => setVForm({ ...vForm, company: e.target.value })} required style={inp} />
       </div>
       <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose *</label>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose * </label>
         <input type="text" value={vForm.purpose} onChange={(e) => setVForm({ ...vForm, purpose: e.target.value })} required style={inp} />
       </div>
       <div>
@@ -1148,7 +1150,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose *</label>
-          <input type="text" value={bForm.purpose} onChange={(e) => setBForm({ ...bForm, purpose: e.target.value })} required style={inp} />
+          <input type="text" value={bForm.purpose} onChange={(e) => setBForm({ ...bForm, purpose: e.target.value })} required style={inp} placeholder="Should be in details - Event Title" />
         </div>
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date *</label>
@@ -1172,6 +1174,14 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Attendees *</label>
           <input type="number" value={bForm.attendees} onChange={(e) => setBForm({ ...bForm, attendees: e.target.value })} required style={inp} />
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>GSTIN <span style={{ color: '#6b7280', fontWeight: '400' }}>(Optional)</span></label>
+          <input type="text" value={bForm.gstin} onChange={(e) => setBForm({ ...bForm, gstin: e.target.value.toUpperCase() })} maxLength="15" style={inp} placeholder="e.g. 33AAAAA0000A1Z5" />
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Smart Card Number <span style={{ color: '#6b7280', fontWeight: '400' }}>(Optional)</span></label>
+          <input type="text" value={bForm.smartCard} onChange={(e) => setBForm({ ...bForm, smartCard: e.target.value })} style={inp} placeholder="Smart Card Number" />
         </div>
       </div>
       <div>
@@ -1259,9 +1269,17 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Alternate Contact Number</label>
         <input type="tel" value={cForm.alternatePhone} onChange={(e) => setCForm({ ...cForm, alternatePhone: e.target.value.replace(/\D/g, '') })} maxLength="10" style={inp} placeholder="Optional" />
       </div>
+       <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>GSTIN <span style={{ color: '#6b7280', fontWeight: '400' }}>(Optional)</span></label>
+        <input type="text" value={cForm.gstin} onChange={(e) => setCForm({ ...cForm, gstin: e.target.value.toUpperCase() })} maxLength="15" style={inp} placeholder="e.g. 33AAAAA0000A1Z5" />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Smart Card Number <span style={{ color: '#6b7280', fontWeight: '400' }}>(Optional)</span></label>
+        <input type="text" value={cForm.smartCard} onChange={(e) => setCForm({ ...cForm, smartCard: e.target.value })} style={inp} placeholder="Smart Card Number" />
+      </div>
       <div style={{ gridColumn: '1 / -1' }}>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose *</label>
-        <textarea value={cForm.purpose} onChange={(e) => setCForm({ ...cForm, purpose: e.target.value })} required style={{ ...inp, minHeight: '100px' }} />
+        <textarea value={cForm.purpose} onChange={(e) => setCForm({ ...cForm, purpose: e.target.value })} required style={{ ...inp, minHeight: '100px' }} placeholder="Should be in details - Event Title" />
       </div>
       <div style={{ gridColumn: '1 / -1' }}>
         <button type="submit" style={{ ...btn, width: '100%' }}>Submit Request</button>
