@@ -1138,14 +1138,14 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
           </div>
         </div>
         <div>
-          <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Organization *</label>
+          <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Organization Address*</label>
           <input 
             type="text" 
             value={bForm.organization} 
             onChange={(e) => setBForm({...bForm, organization: e.target.value})}
             required
             style={inp}
-            placeholder="Company/Group name"
+            placeholder="Company name & Address"
           />
         </div>
         <div>
@@ -1747,6 +1747,13 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Calendar size={16} style={{ verticalAlign: 'middle' }} /> {b.date} | {b.start} - {b.end}</p>
             <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {b.purpose}</p>
             <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Attendees: {b.attendees}{b.req && ` | Requirements: ${b.req}`}</p>
+            {(b.gstin || b.smartCard) && (
+              <p style={{ color: '#6b7280', fontSize: '0.9rem', marginTop: '0.25rem' }}>
+                {b.gstin && <span>GSTIN: <strong style={{ color: '#1f2937' }}>{b.gstin}</strong></span>}
+                {b.gstin && b.smartCard && <span> | </span>}
+                {b.smartCard && <span>Smart Card: <strong style={{ color: '#1f2937' }}>{b.smartCard}</strong></span>}
+              </p>
+            )}
             {b.msg && <p style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '0.5rem', padding: '0.5rem', background: '#ffffff', borderRadius: '4px' }}><strong>Admin:</strong> {b.msg}</p>}
           </div>
           <span style={{ padding: '0.5rem 1rem', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '600', height: 'fit-content', background: b.status === 'approved' ? 'rgba(13, 140, 79, 0.1)' : b.status === 'rejected' ? 'rgba(220, 38, 38, 0.1)' : 'rgba(245, 166, 35, 0.1)', color: b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623' }}>
@@ -1830,7 +1837,14 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Mail size={16} style={{ verticalAlign: 'middle' }} /> {c.email} | <Phone size={16} style={{ verticalAlign: 'middle' }} /> {c.fullPhone || c.phone}</p>
             <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Seats:</strong> {c.seats} | <strong>Duration:</strong> {c.duration}</p>
             <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Start:</strong> {c.startDate}</p>
-            <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {c.purpose}</p>
+           <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {c.purpose}</p>
+            {(c.gstin || c.smartCard) && (
+              <p style={{ color: '#6b7280', margin: '0.25rem 0', fontSize: '0.9rem' }}>
+                {c.gstin && <span>GSTIN: <strong style={{ color: '#1f2937' }}>{c.gstin}</strong></span>}
+                {c.gstin && c.smartCard && <span> | </span>}
+                {c.smartCard && <span>Smart Card: <strong style={{ color: '#1f2937' }}>{c.smartCard}</strong></span>}
+              </p>
+            )}
             {c.msg && <p style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '0.5rem', padding: '0.5rem', background: '#ffffff', borderRadius: '4px' }}><strong>Admin:</strong> {c.msg}</p>}
           </div>
           <span style={{ padding: '0.5rem 1rem', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '600', height: 'fit-content', background: c.status === 'approved' ? 'rgba(13, 140, 79, 0.1)' : c.status === 'rejected' ? 'rgba(220, 38, 38, 0.1)' : 'rgba(245, 166, 35, 0.1)', color: c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623' }}>
