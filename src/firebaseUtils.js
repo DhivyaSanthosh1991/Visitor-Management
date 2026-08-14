@@ -396,3 +396,39 @@ export const getUpcomingEvents = async () => {
     throw error;
   }
 };
+// ==================== FEEDBACK ====================
+
+export const addFeedback = async (feedbackData) => {
+  try {
+    const docRef = await addDoc(collection(db, 'feedback'), {
+      ...feedbackData,
+      createdAt: new Date().toISOString()
+    });
+    return { firebaseId: docRef.id, ...feedbackData };
+  } catch (error) {
+    console.error('Error adding feedback:', error);
+    throw error;
+  }
+};
+
+export const getFeedback = async () => {
+  try {
+    const querySnapshot = await getDocs(collection(db, 'feedback'));
+    return querySnapshot.docs.map(doc => ({
+      firebaseId: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error getting feedback:', error);
+    throw error;
+  }
+};
+
+export const deleteFeedback = async (firebaseId) => {
+  try {
+    await deleteDoc(doc(db, 'feedback', firebaseId));
+  } catch (error) {
+    console.error('Error deleting feedback:', error);
+    throw error;
+  }
+};
