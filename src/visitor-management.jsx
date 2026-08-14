@@ -78,8 +78,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   });
   const [feedbackFilter, setFeedbackFilter] = useState('all');
   const [editC, setEditC] = useState(null);
-  const [expandedCompany, setExpandedCompany] = useState(null);
-  
+ 
   // Generate auto ID
   const generateId = (prefix, existingItems) => {
     const today = new Date();
