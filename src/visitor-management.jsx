@@ -2154,36 +2154,39 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     {feedbacks.filter(f => feedbackFilter === 'all' || f.category === feedbackFilter).length === 0 ? (
       <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No feedback yet.</p>
     ) : (
-      feedbacks
-        .filter(f => feedbackFilter === 'all' || f.category === feedbackFilter)
-        .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''))
-        .map(f => (
-          <div key={f.firebaseId} style={{ background: '#f9fafb', borderRadius: '10px', padding: '1.25rem 1.5rem', marginBottom: '1rem', border: '1px solid #e5e7eb' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              <div>
-                <span style={{ fontWeight: '700', color: '#1f2937', fontSize: '1rem' }}>{f.name}</span>
-                {f.email && <span style={{ color: '#6b7280', fontSize: '0.85rem', marginLeft: '0.75rem' }}>{f.email}</span>}
-                {f.phone && <span style={{ color: '#6b7280', fontSize: '0.85rem', marginLeft: '0.75rem' }}>📞 {f.phone}</span>}
+      <div>
+        {feedbacks
+          .filter(f => feedbackFilter === 'all' || f.category === feedbackFilter)
+          .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''))
+          .map(f => (
+            <div key={f.firebaseId} style={{ background: '#f9fafb', borderRadius: '10px', padding: '1.25rem 1.5rem', marginBottom: '1rem', border: '1px solid #e5e7eb' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                <div>
+                  <span style={{ fontWeight: '700', color: '#1f2937', fontSize: '1rem' }}>{f.name}</span>
+                  {f.email && <span style={{ color: '#6b7280', fontSize: '0.85rem', marginLeft: '0.75rem' }}>{f.email}</span>}
+                  {f.phone && <span style={{ color: '#6b7280', fontSize: '0.85rem', marginLeft: '0.75rem' }}>📞 {f.phone}</span>}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ padding: '0.25rem 0.75rem', background: 'rgba(43,76,126,0.1)', color: '#2B4C7E', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '600' }}>{f.category}</span>
+                  <span style={{ fontSize: '0.9rem' }}>{f.rating}</span>
+                  <button onClick={async () => {
+                    if (confirm('Delete this feedback?')) {
+                      try {
+                        await deleteFeedback(f.firebaseId);
+                        setFeedbacks(feedbacks.filter(x => x.firebaseId !== f.firebaseId));
+                      } catch(e) { alert('Error deleting!'); }
+                    }
+                  }} style={{ padding: '0.35rem 0.6rem', background: 'rgba(220,38,38,0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <span style={{ padding: '0.25rem 0.75rem', background: 'rgba(43,76,126,0.1)', color: '#2B4C7E', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '600' }}>{f.category}</span>
-                <span style={{ fontSize: '0.9rem' }}>{f.rating}</span>
-                <button onClick={async () => {
-                  if (confirm('Delete this feedback?')) {
-                    try {
-                      await deleteFeedback(f.firebaseId);
-                      setFeedbacks(feedbacks.filter(x => x.firebaseId !== f.firebaseId));
-                    } catch(e) { alert('Error deleting!'); }
-                  }
-                }} style={{ padding: '0.35rem 0.6rem', background: 'rgba(220,38,38,0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
+              <p style={{ color: '#1f2937', margin: '0 0 0.5rem', lineHeight: '1.6' }}>{f.message}</p>
+              <p style={{ color: '#9ca3af', fontSize: '0.78rem', margin: 0 }}>{f.submittedAt}</p>
             </div>
-            <p style={{ color: '#1f2937', margin: '0 0 0.5rem', lineHeight: '1.6' }}>{f.message}</p>
-            <p style={{ color: '#9ca3af', fontSize: '0.78rem', margin: 0 }}>{f.submittedAt}</p>
-          </div>
-        ))
+          ))
+        }
+      </div>
     )}
   </div>
 )}
@@ -2236,6 +2239,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       )}
     </div>
+  </div>
   );
 };
 
