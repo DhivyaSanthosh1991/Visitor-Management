@@ -9,7 +9,9 @@ import {
   getHalls, addHall, updateHall, deleteHall,
   getBookings, addBooking, updateBooking as updateBookingFirebase, deleteBooking,
   getCoworking, addCoworking, updateCoworking as updateCoworkingFirebase, deleteCoworking,
-  addCoworkingMember, getCoworkingMembers, deleteCoworkingMember
+  addCoworkingMember, getCoworkingMembers, deleteCoworkingMember,
+  archiveMonthData, getMonthlyArchives, deleteMonthRecords,
+  addFeedback, getFeedback, deleteFeedback
 } from './firebaseUtils';
 
 const VisitorManagementSystem = () => {
@@ -28,8 +30,6 @@ const [visitorSearch, setVisitorSearch] = useState('');
 const [visitorDateFrom, setVisitorDateFrom] = useState('');
 const [visitorDateTo, setVisitorDateTo] = useState('');
 const [selectedVisitors, setSelectedVisitors] = useState([]);
-const [visitorSortField, setVisitorSortField] = useState('id');
-const [visitorSortDir, setVisitorSortDir] = useState('asc');
 const [bookingSearch, setBookingSearch] = useState('');
 const [bookingStatusFilter, setBookingStatusFilter] = useState('all');
 const [coworkingSearch, setCoworkingSearch] = useState('');
@@ -38,24 +38,16 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   const [vForm, setVForm] = useState({ prefix: 'Mr', name: '', email: '', phone: '', countryCode: '+91', company: '', purpose: '', toMeet: '', accompanying: [] });
   const [eForm, setEForm] = useState({ eventName: '', organizer: '', partner: '', type: '', date: '', start: '', end: '', venue: '', desc: '', max: '' });
   const [hForm, setHForm] = useState({ name: '', capacity: '', avail: 'available' });
- const [bForm, setBForm] = useState({ 
+  const [bForm, setBForm] = useState({ 
     hallId: '', hallName: '', organizerName: '', email: '', 
     phone: '', countryCode: '+91', organization: '', purpose: '', 
     date: '', start: '', end: '', attendees: '', req: '',
     gstin: '', smartCard: ''
   });
- const [cForm, setCForm] = useState({ 
+  const [cForm, setCForm] = useState({ 
     name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '',
     company: '', designation: '', gender: '', seats: '', duration: '', startDate: '', purpose: '',
     gstin: '', smartCard: ''
-  });
-  const [coworkingMembers, setCoworkingMembers] = useState([]);
-  const [memberForm, setMemberForm] = useState({
-    bookingId: '', slNo: '', name: '', designation: '', 
-    contactNumber: '', alternateContact: '', email: '', 
-    gender: '', aadharNo: '', dob: '', maritalStatus: '', 
-    bloodGroup: '', fatherName: '', permanentAddress: '', 
-    communicationAddress: '', officeAddress: ''
   });
   const [regForm, setRegForm] = useState({ 
     eventId: '', name: '', email: '', phone: '', countryCode: '+91', 
@@ -66,6 +58,25 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   const [editE, setEditE] = useState(null);
   const [editH, setEditH] = useState(null);
   const [editB, setEditB] = useState(null);
+  const [editC, setEditC] = useState(null);
+  const [expandedCompany, setExpandedCompany] = useState(null);
+  const [coworkingMembers, setCoworkingMembers] = useState([]);
+  const [memberForm, setMemberForm] = useState({
+    bookingId: '', name: '', designation: '',
+    contactNumber: '', alternateContact: '', email: '',
+    gender: '', aadharNo: '', dob: '', maritalStatus: '',
+    bloodGroup: '', fatherName: '', permanentAddress: '',
+    communicationAddress: '', officeAddress: ''
+  });
+  const [monthlyArchives, setMonthlyArchives] = useState([]);
+  const [archiveMonth, setArchiveMonth] = useState('');
+  const [archiving, setArchiving] = useState(false);
+  const [visitorSortDir, setVisitorSortDir] = useState('desc');
+  const [feedbacks, setFeedbacks] = useState([]);
+  const [feedbackForm, setFeedbackForm] = useState({
+    name: '', email: '', phone: '', category: '', rating: '', message: ''
+  });
+  const [feedbackFilter, setFeedbackFilter] = useState('all');
   const [editC, setEditC] = useState(null);
   const [expandedCompany, setExpandedCompany] = useState(null);
   
@@ -112,25 +123,27 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   };
 
   // ✅ FIX: Filter functions MOVED OUTSIDE exportToExcel
- const getFilteredVisitors = () => {
+  const getFilteredVisitors = () => {
     return visitors.filter(v => {
       const matchesSearch =
         v.id?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
         v.name?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
         v.company?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
         v.email?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-        v.time?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-        v.toMeet?.toLowerCase().includes(visitorSearch.toLowerCase());
+        v.time?.toLowerCase().includes(visitorSearch.toLowerCase());
 
+      // Date range filter using the time field (format: DD/MM/YYYY, HH:MM:SS)
       let matchesDate = true;
       if (visitorDateFrom || visitorDateTo) {
-        const parts = v.time ? v.time.split(',')[0].trim().split('/') : null;
-        if (parts && parts.length === 3) {
-          const vDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+        // Parse DD/MM/YYYY from time string
+        const timeParts = v.time ? v.time.split(',')[0].trim().split('/') : null;
+        if (timeParts && timeParts.length === 3) {
+          const vDate = new Date(`${timeParts[2]}-${timeParts[1]}-${timeParts[0]}`);
           if (visitorDateFrom) matchesDate = matchesDate && vDate >= new Date(visitorDateFrom);
           if (visitorDateTo) matchesDate = matchesDate && vDate <= new Date(visitorDateTo);
         }
       }
+
       return matchesSearch && matchesDate;
     });
   };
@@ -161,57 +174,20 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       return matchesSearch && matchesStatus;
     });
   };
-// Parse visitor ID into sortable value: V-DDMMYYYY-SEQ → YYYYMMDD + SEQ
-  const parseVisitorId = (id) => {
-    try {
-      const parts = (id || '').split('-');
-      const d = parts[1] || '01012000000';
-      return (
-        parseInt(d.slice(4, 8)) * 100000000 +
-        parseInt(d.slice(2, 4)) * 1000000 +
-        parseInt(d.slice(0, 2)) * 10000 +
-        parseInt(parts[2] || '0')
-      );
-    } catch { return 0; }
-  };
 
-  // Parse time string DD/MM/YYYY, HH:MM:SS to Date
-  const parseVisitorTime = (t) => {
-    try {
-      const parts = (t || '').split(',')[0].trim().split('/');
-      if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-    } catch {}
-    return new Date(0);
-  };
-
-  const getSortedVisitors = () => {
-    return [...getFilteredVisitors()].sort((a, b) => {
-      let cmp = 0;
-      if (visitorSortField === 'id') {
-        cmp = parseVisitorId(a.id) - parseVisitorId(b.id);
-      } else if (visitorSortField === 'time') {
-        cmp = parseVisitorTime(a.time) - parseVisitorTime(b.time);
-      } else if (visitorSortField === 'name') {
-        cmp = (a.name || '').localeCompare(b.name || '');
-      } else if (visitorSortField === 'company') {
-        cmp = (a.company || '').localeCompare(b.company || '');
-      } else if (visitorSortField === 'toMeet') {
-        cmp = (a.toMeet || '').localeCompare(b.toMeet || '');
-      }
-      return visitorSortDir === 'asc' ? cmp : -cmp;
-    });
-  };
  // Load data from Firebase
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [visitorsData, eventsData, hallsData, bookingsData, coworkingData, membersData] = await Promise.all([
+        const [visitorsData, eventsData, hallsData, bookingsData, coworkingData, membersData, archivesData, feedbacksData] = await Promise.all([
           getVisitors(),
           getEvents(),
           getHalls(),
           getBookings(),
           getCoworking(),
-          getCoworkingMembers()
+          getCoworkingMembers(),
+          getMonthlyArchives(),
+          getFeedback()
         ]);
         
         setVisitors(visitorsData);
@@ -220,6 +196,8 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         setBookings(bookingsData);
         setCoworking(coworkingData);
         setCoworkingMembers(membersData);
+        setMonthlyArchives(archivesData);
+        setFeedbacks(feedbacksData || []);
       } catch (err) {
         console.error('Error loading from Firebase:', err);
       }
@@ -386,7 +364,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       const newBooking = await addBooking(b);
       setBookings([...bookings, newBooking]);
       
-      setBForm({ hallId: '', hallName: '', organizerName: '', email: '', phone: '', countryCode: '+91', organization: '', purpose: '', date: '', start: '', end: '', attendees: '', req: '', gstin: '', smartCard: '' }); 
+      setBForm({ hallId: '', hallName: '', organizerName: '', email: '', phone: '', countryCode: '+91', organization: '', purpose: '', date: '', start: '', end: '', attendees: '', req: '' }); 
       alert('Booking submitted! Booking ID: ' + b.id); 
       setTab('home');
     } catch (error) {
@@ -419,17 +397,17 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         status: 'pending', 
         submitted: new Date().toLocaleString() 
       };
-
+      
       const newCoworking = await addCoworking(c);
       setCoworking([...coworking, newCoworking]);
-     setCForm({ name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '', company: '', designation: '', gender: '', seats: '', duration: '', startDate: '', purpose: '', gstin: '', smartCard: '' }); 
+      
+      setCForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', seats: '', duration: '', startDate: '', purpose: '' }); 
       alert('Request submitted! Coworking ID: ' + c.id); 
       setTab('home');
     } catch (error) {
       console.error('Error submitting coworking:', error);
       alert('Error submitting coworking!');
     }
-  
   };
   
  const submitReg = async (e) => { 
@@ -478,47 +456,116 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   const sendEmail = (to, subject, body) => {
     setEmailModal({ to, subject, body });
   };
+  
 
- const submitMember = async (e) => {
+  const submitMember = async (e) => {
     e.preventDefault();
-    if (!memberForm.bookingId.trim()) {
-      alert('Please enter your Booking ID');
-      return;
-    }
-    // Verify booking ID exists and is approved
+    if (!memberForm.bookingId.trim()) { alert('Please enter your Booking ID'); return; }
     const booking = coworking.find(c => c.id === memberForm.bookingId.trim());
-    if (!booking) {
-      alert('Booking ID not found. Please check and try again.');
-      return;
-    }
-    if (booking.status !== 'approved') {
-      alert('Your coworking booking is not yet approved. Please wait for approval before registering members.');
-      return;
-    }
+    if (!booking) { alert('Booking ID not found. Please check and try again.'); return; }
+    if (booking.status !== 'approved') { alert('Your coworking booking is not yet approved. Please wait for approval.'); return; }
     try {
-      const member = {
-        ...memberForm,
-        bookingId: memberForm.bookingId.trim(),
-        company: booking.company,
-        submittedAt: new Date().toLocaleString()
-      };
+      const member = { ...memberForm, bookingId: memberForm.bookingId.trim(), company: booking.company, submittedAt: new Date().toLocaleString() };
       const newMember = await addCoworkingMember(member);
       setCoworkingMembers([...coworkingMembers, newMember]);
-      setMemberForm({
-        bookingId: '', slNo: '', name: '', designation: '',
-        contactNumber: '', alternateContact: '', email: '',
-        gender: '', aadharNo: '', dob: '', maritalStatus: '',
-        bloodGroup: '', fatherName: '', permanentAddress: '',
-        communicationAddress: '', officeAddress: ''
+      setMemberForm({ bookingId: '', name: '', designation: '', contactNumber: '', alternateContact: '', email: '', gender: '', aadharNo: '', dob: '', maritalStatus: '', bloodGroup: '', fatherName: '', permanentAddress: '', communicationAddress: '', officeAddress: '' });
+      alert('Member registered successfully!'); setTab('home');
+    } catch (error) { console.error('Error:', error); alert('Error registering member!'); }
+  };
+
+  const parseVisitorId = (id) => {
+    try {
+      const p = (id || '').split('-'); const d = p[1] || '01012000000';
+      return parseInt(d.slice(4,8))*100000000 + parseInt(d.slice(2,4))*1000000 + parseInt(d.slice(0,2))*10000 + parseInt(p[2]||'0');
+    } catch { return 0; }
+  };
+
+  const parseBookingId = (id) => {
+    try {
+      const p = (id || '').split('-'); const d = p[1] || '01012000000';
+      return parseInt(d.slice(4,8))*100000000 + parseInt(d.slice(2,4))*1000000 + parseInt(d.slice(0,2))*10000 + parseInt(p[2]||'0');
+    } catch { return 0; }
+  };
+
+  const handleArchiveAndClear = async () => {
+    if (!archiveMonth) { alert('Please select a month to archive.'); return; }
+    const [year, month] = archiveMonth.split('-');
+    const label = new Date(parseInt(year), parseInt(month)-1).toLocaleString('default', { month: 'long', year: 'numeric' });
+    if (!confirm(`Archive and clear all data for ${label}? This cannot be undone.`)) return;
+    setArchiving(true);
+    try {
+      const mmyyyy = month + year;
+      const monthVisitors = visitors.filter(v => v.id && v.id.includes('-' + String(parseInt(month)).padStart(2,'0') + year + '-') || (v.time && v.time.includes('/' + month + '/' + year)));
+      const monthBookings = bookings.filter(b => b.id && b.id.split('-')[1]?.slice(2,4) === month && b.id.split('-')[1]?.slice(4,8) === year);
+      const monthCoworking = coworking.filter(c => c.id && c.id.split('-')[1]?.slice(2,4) === month && c.id.split('-')[1]?.slice(4,8) === year);
+
+      const hallBreakdown = {};
+      monthBookings.filter(b => b.status === 'approved').forEach(b => {
+        const hall = b.hallName || 'Unknown';
+        if (!hallBreakdown[hall]) hallBreakdown[hall] = { bookings: 0, hours: 0 };
+        hallBreakdown[hall].bookings++;
+        if (b.start && b.end) {
+          const [sh, sm] = b.start.split(':').map(Number);
+          const [eh, em] = b.end.split(':').map(Number);
+          hallBreakdown[hall].hours += Math.round(((eh*60+em) - (sh*60+sm)) / 60 * 10) / 10;
+        }
       });
-      alert('Member registered successfully!');
+
+      const companyBreakdown = {};
+      monthCoworking.filter(c => c.status === 'approved').forEach(c => {
+        companyBreakdown[c.company || 'Unknown'] = (companyBreakdown[c.company || 'Unknown'] || 0) + parseInt(c.seats || 0);
+      });
+
+      const summary = {
+        month: archiveMonth, label,
+        visitors: { total: monthVisitors.length },
+        bookings: {
+          total: monthBookings.length,
+          approved: monthBookings.filter(b => b.status === 'approved').length,
+          pending: monthBookings.filter(b => b.status === 'pending').length,
+          rejected: monthBookings.filter(b => b.status === 'rejected').length,
+          byHall: hallBreakdown
+        },
+        coworking: {
+          total: monthCoworking.length,
+          approved: monthCoworking.filter(c => c.status === 'approved').length,
+          rejected: monthCoworking.filter(c => c.status === 'rejected').length,
+          byCompany: companyBreakdown
+        },
+        archivedAt: new Date().toLocaleString()
+      };
+
+      await archiveMonthData(archiveMonth, summary);
+
+      for (const v of monthVisitors) { if (v.firebaseId) await deleteVisitor(v.firebaseId); }
+      for (const b of monthBookings) { if (b.firebaseId) await deleteBooking(b.firebaseId); }
+      for (const c of monthCoworking) { if (c.firebaseId) await deleteCoworking(c.firebaseId); }
+
+      setVisitors(visitors.filter(v => !monthVisitors.find(mv => mv.firebaseId === v.firebaseId)));
+      setBookings(bookings.filter(b => !monthBookings.find(mb => mb.firebaseId === b.firebaseId)));
+      setCoworking(coworking.filter(c => !monthCoworking.find(mc => mc.firebaseId === c.firebaseId)));
+      setMonthlyArchives([...monthlyArchives.filter(a => a.month !== archiveMonth), summary]);
+      setArchiveMonth('');
+      alert(`✅ ${label} archived successfully! ${monthVisitors.length} visitors, ${monthBookings.length} bookings, ${monthCoworking.length} coworking records archived.`);
+    } catch (error) { console.error('Archive error:', error); alert('Error archiving data!'); }
+    setArchiving(false);
+  };
+
+  const submitFeedback = async (e) => {
+    e.preventDefault();
+    try {
+      const fb = { ...feedbackForm, submittedAt: new Date().toLocaleString() };
+      const newFb = await addFeedback(fb);
+      setFeedbacks([...feedbacks, newFb]);
+      setFeedbackForm({ name: '', email: '', phone: '', category: '', rating: '', message: '' });
+      alert('Thank you for your feedback!');
       setTab('home');
     } catch (error) {
-      console.error('Error registering member:', error);
-      alert('Error registering member!');
+      console.error('Error submitting feedback:', error);
+      alert('Error submitting feedback!');
     }
-  }; 
-  
+  };
+
  const updateBooking = async (id, status, msg = '') => { 
     try {
       const booking = bookings.find(b => b.id === id);
@@ -629,21 +676,19 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     return cleaned;
   });
   
-  // Sort data by ID first
- // Sort by ID correctly: extract DDMMYYYY from ID → sort as YYYYMMDD
-  const parseIdForSort = (id) => {
-    try {
-      const parts = (id || '').split('-');
-      const d = parts[1] || '01012000000';
-      return (
-        parseInt(d.slice(4, 8)) * 100000000 +
-        parseInt(d.slice(2, 4)) * 1000000 +
-        parseInt(d.slice(0, 2)) * 10000 +
-        parseInt(parts[2] || '0')
-      );
-    } catch { return 0; }
-  };
-  cleanedData.sort((a, b) => parseIdForSort(a.id) - parseIdForSort(b.id));
+  // Sort by ID first, then by date ascending within same ID prefix
+  cleanedData.sort((a, b) => {
+    // Primary: sort by ID (which encodes date + sequence)
+    const idCompare = (a.id || '').localeCompare(b.id || '');
+    if (idCompare !== 0) return idCompare;
+    // Secondary: sort by time ascending
+    const parseDate = (t) => {
+      if (!t) return new Date(0);
+      const parts = t.split(',')[0].trim().split('/');
+      return parts.length === 3 ? new Date(`${parts[2]}-${parts[1]}-${parts[0]}`) : new Date(0);
+    };
+    return parseDate(a.time) - parseDate(b.time);
+  });
 
   // Remove updatedAt from all rows
   cleanedData.forEach(item => { delete item.updatedAt; });
@@ -723,6 +768,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <button onClick={() => setTab('e-reg')} style={{ padding: '0.75rem 1.5rem', background: tab === 'e-reg' ? '#2B4C7E' : 'transparent', color: tab === 'e-reg' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'e-reg' ? '600' : '500', borderBottom: tab === 'e-reg' ? '3px solid #F5A623' : 'none' }}>Event Registration</button>
             <button onClick={() => setTab('h-book')} style={{ padding: '0.75rem 1.5rem', background: tab === 'h-book' ? '#2B4C7E' : 'transparent', color: tab === 'h-book' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'h-book' ? '600' : '500', borderBottom: tab === 'h-book' ? '3px solid #F5A623' : 'none' }}>Hall Booking</button>
             <button onClick={() => setTab('cowork')} style={{ padding: '0.75rem 1.5rem', background: tab === 'cowork' ? '#2B4C7E' : 'transparent', color: tab === 'cowork' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'cowork' ? '600' : '500', borderBottom: tab === 'cowork' ? '3px solid #F5A623' : 'none' }}>Coworking</button>
+            <button onClick={() => setTab('feedback')} style={{ padding: '0.75rem 1.5rem', background: tab === 'feedback' ? '#2B4C7E' : 'transparent', color: tab === 'feedback' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'feedback' ? '600' : '500', borderBottom: tab === 'feedback' ? '3px solid #F5A623' : 'none' }}>Feedback</button>
             <button onClick={() => setTab('login')} style={{ padding: '0.75rem 1.5rem', background: tab === 'login' ? '#2B4C7E' : 'transparent', color: tab === 'login' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'login' ? '600' : '500', borderBottom: tab === 'login' ? '3px solid #F5A623' : 'none' }}>Admin</button>
           </>
         ) : (
@@ -732,7 +778,12 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <button onClick={() => setTab('admin-h')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-h' ? '#2B4C7E' : 'transparent', color: tab === 'admin-h' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-h' ? '600' : '500', borderBottom: tab === 'admin-h' ? '3px solid #F5A623' : 'none' }}>Halls</button>
             <button onClick={() => setTab('admin-b')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-b' ? '#2B4C7E' : 'transparent', color: tab === 'admin-b' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-b' ? '600' : '500', borderBottom: tab === 'admin-b' ? '3px solid #F5A623' : 'none' }}>Bookings</button>
             <button onClick={() => setTab('admin-c')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-c' ? '#2B4C7E' : 'transparent', color: tab === 'admin-c' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-c' ? '600' : '500', borderBottom: tab === 'admin-c' ? '3px solid #F5A623' : 'none' }}>Coworking</button>
-            <button onClick={() => setTab('admin-cm')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-cm' ? '#2B4C7E' : 'transparent', color: tab === 'admin-cm' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-cm' ? '600' : '500', borderBottom: tab === 'admin-cm' ? '3px solid #F5A623' : 'none' }}>Co-Working Members</button>          </>
+            <button onClick={() => setTab('admin-cm')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-cm' ? '#2B4C7E' : 'transparent', color: tab === 'admin-cm' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-cm' ? '600' : '500', borderBottom: tab === 'admin-cm' ? '3px solid #F5A623' : 'none' }}>Members</button>
+            <button onClick={() => setTab('admin-r')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-r' ? '#2B4C7E' : 'transparent', color: tab === 'admin-r' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-r' ? '600' : '500', borderBottom: tab === 'admin-r' ? '3px solid #F5A623' : 'none' }}>Reports</button>
+            <button onClick={() => setTab('admin-fb')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-fb' ? '#2B4C7E' : 'transparent', color: tab === 'admin-fb' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-fb' ? '600' : '500', borderBottom: tab === 'admin-fb' ? '3px solid #F5A623' : 'none', position: 'relative' }}>
+              Feedback {feedbacks.length > 0 && <span style={{ position: 'absolute', top: '6px', right: '6px', background: '#dc2626', color: '#fff', borderRadius: '50%', width: '18px', height: '18px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{feedbacks.length}</span>}
+            </button>
+          </>
         )}
       </div>
 
@@ -825,7 +876,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <input type="text" value={vForm.company} onChange={(e) => setVForm({ ...vForm, company: e.target.value })} required style={inp} />
       </div>
       <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose * </label>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose *</label>
         <input type="text" value={vForm.purpose} onChange={(e) => setVForm({ ...vForm, purpose: e.target.value })} required style={inp} />
       </div>
       <div>
@@ -1138,19 +1189,19 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
           </div>
         </div>
         <div>
-          <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Organization Address*</label>
+          <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Organization *</label>
           <input 
             type="text" 
             value={bForm.organization} 
             onChange={(e) => setBForm({...bForm, organization: e.target.value})}
             required
             style={inp}
-            placeholder="Company name & Address"
+            placeholder="Company/Group name"
           />
         </div>
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose *</label>
-          <input type="text" value={bForm.purpose} onChange={(e) => setBForm({ ...bForm, purpose: e.target.value })} required style={inp} placeholder="Should be in details - Event Title" />
+          <input type="text" value={bForm.purpose} onChange={(e) => setBForm({ ...bForm, purpose: e.target.value })} required style={inp} />
         </div>
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date *</label>
@@ -1174,14 +1225,6 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Attendees *</label>
           <input type="number" value={bForm.attendees} onChange={(e) => setBForm({ ...bForm, attendees: e.target.value })} required style={inp} />
-        </div>
-        <div>
-          <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>GSTIN <span style={{ color: '#6b7280', fontWeight: '400' }}>(Optional)</span></label>
-          <input type="text" value={bForm.gstin} onChange={(e) => setBForm({ ...bForm, gstin: e.target.value.toUpperCase() })} maxLength="15" style={inp} placeholder="e.g. 33AAAAA0000A1Z5" />
-        </div>
-        <div>
-          <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Smart Card Number <span style={{ color: '#6b7280', fontWeight: '400' }}>(Optional)</span></label>
-          <input type="text" value={bForm.smartCard} onChange={(e) => setBForm({ ...bForm, smartCard: e.target.value })} style={inp} placeholder="Smart Card Number" />
         </div>
       </div>
       <div>
@@ -1254,49 +1297,14 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
           {['daily', 'weekly', 'monthly', 'quarterly'].map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
         </select>
       </div>
-     <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Designation *</label>
-        <input type="text" value={cForm.designation} onChange={(e) => setCForm({ ...cForm, designation: e.target.value })} required style={inp} placeholder="e.g. CEO, Manager" />
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Gender *</label>
-        <select value={cForm.gender} onChange={(e) => setCForm({ ...cForm, gender: e.target.value })} required style={inp}>
-          <option value="">Select</option>
-          {['Male', 'Female', 'Other'].map(g => <option key={g} value={g}>{g}</option>)}
-        </select>
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Alternate Contact Number</label>
-        <input type="tel" value={cForm.alternatePhone} onChange={(e) => setCForm({ ...cForm, alternatePhone: e.target.value.replace(/\D/g, '') })} maxLength="10" style={inp} placeholder="Optional" />
-      </div>
-       <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>GSTIN <span style={{ color: '#6b7280', fontWeight: '400' }}>(Optional)</span></label>
-        <input type="text" value={cForm.gstin} onChange={(e) => setCForm({ ...cForm, gstin: e.target.value.toUpperCase() })} maxLength="15" style={inp} placeholder="e.g. 33AAAAA0000A1Z5" />
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Smart Card Number <span style={{ color: '#6b7280', fontWeight: '400' }}>(Optional)</span></label>
-        <input type="text" value={cForm.smartCard} onChange={(e) => setCForm({ ...cForm, smartCard: e.target.value })} style={inp} placeholder="Smart Card Number" />
-      </div>
       <div style={{ gridColumn: '1 / -1' }}>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose *</label>
-        <textarea value={cForm.purpose} onChange={(e) => setCForm({ ...cForm, purpose: e.target.value })} required style={{ ...inp, minHeight: '100px' }} placeholder="Should be in details" />
+        <textarea value={cForm.purpose} onChange={(e) => setCForm({ ...cForm, purpose: e.target.value })} required style={{ ...inp, minHeight: '100px' }} />
       </div>
       <div style={{ gridColumn: '1 / -1' }}>
         <button type="submit" style={{ ...btn, width: '100%' }}>Submit Request</button>
       </div>
     </form>
-
-    <div style={{ marginTop: '2rem', padding: '1.5rem', background: '#EFF6FF', border: '2px solid #2B4C7E', borderRadius: '10px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h3 style={{ color: '#2B4C7E', fontWeight: '700', margin: '0 0 0.25rem' }}>Team Member Registration</h3>
-          <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>Already have a Booking ID? Register your team members here.</p>
-        </div>
-        <button onClick={() => setTab('cowork-member')} style={{ ...btn, background: '#F5A623', whiteSpace: 'nowrap' }}>
-          + Register Members
-        </button>
-      </div>
-    </div>
   </div>
 )}
 
@@ -1318,87 +1326,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     </div>
   </div>
 )}
-{tab === 'cowork-member' && (
-  <div style={card}>
-    <button onClick={() => setTab('home')} style={{ ...btn, marginBottom: '1rem' }}>← Back</button>
-    <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '0.5rem' }}>Coworking Member Registration</h2>
-    <p style={{ color: '#6b7280', marginBottom: '1.5rem', fontSize: '0.95rem' }}>Team members using the coworking space must fill this form. You will need the Booking ID from your incharge.</p>
-    <form onSubmit={submitMember} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
-      <div style={{ gridColumn: '1 / -1', background: '#EFF6FF', border: '2px solid #2B4C7E', borderRadius: '8px', padding: '1rem' }}>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '700' }}>Booking ID * <span style={{ fontWeight: '400', fontSize: '0.85rem' }}>(Get this from your incharge — e.g. C-01072026-001)</span></label>
-        <input type="text" value={memberForm.bookingId} onChange={(e) => setMemberForm({ ...memberForm, bookingId: e.target.value })} required style={inp} placeholder="e.g. C-01072026-001" />
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Full Name *</label>
-        <input type="text" value={memberForm.name} onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })} required style={inp} />
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Designation *</label>
-        <input type="text" value={memberForm.designation} onChange={(e) => setMemberForm({ ...memberForm, designation: e.target.value })} required style={inp} />
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Contact Number *</label>
-        <input type="tel" value={memberForm.contactNumber} onChange={(e) => setMemberForm({ ...memberForm, contactNumber: e.target.value.replace(/\D/g, '') })} maxLength="10" required style={inp} />
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Alternate Contact Number</label>
-        <input type="tel" value={memberForm.alternateContact} onChange={(e) => setMemberForm({ ...memberForm, alternateContact: e.target.value.replace(/\D/g, '') })} maxLength="10" style={inp} />
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Email ID *</label>
-        <input type="email" value={memberForm.email} onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })} required style={inp} />
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Gender *</label>
-        <select value={memberForm.gender} onChange={(e) => setMemberForm({ ...memberForm, gender: e.target.value })} required style={inp}>
-          <option value="">Select</option>
-          {['Male', 'Female', 'Other'].map(g => <option key={g} value={g}>{g}</option>)}
-        </select>
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Aadhar Number *</label>
-        <input type="text" value={memberForm.aadharNo} onChange={(e) => setMemberForm({ ...memberForm, aadharNo: e.target.value.replace(/\D/g, '') })} maxLength="12" required style={inp} placeholder="12-digit Aadhar number" />
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date of Birth *</label>
-        <input type="date" value={memberForm.dob} onChange={(e) => setMemberForm({ ...memberForm, dob: e.target.value })} required style={inp} />
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Marital Status</label>
-        <select value={memberForm.maritalStatus} onChange={(e) => setMemberForm({ ...memberForm, maritalStatus: e.target.value })} style={inp}>
-          <option value="">Select</option>
-          {['Single', 'Married', 'Divorced', 'Widowed'].map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Blood Group</label>
-        <select value={memberForm.bloodGroup} onChange={(e) => setMemberForm({ ...memberForm, bloodGroup: e.target.value })} style={inp}>
-          <option value="">Select</option>
-          {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(b => <option key={b} value={b}>{b}</option>)}
-        </select>
-      </div>
-      <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Father's Name *</label>
-        <input type="text" value={memberForm.fatherName} onChange={(e) => setMemberForm({ ...memberForm, fatherName: e.target.value })} required style={inp} />
-      </div>
-      <div style={{ gridColumn: '1 / -1' }}>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Permanent Address *</label>
-        <textarea value={memberForm.permanentAddress} onChange={(e) => setMemberForm({ ...memberForm, permanentAddress: e.target.value })} required style={{ ...inp, minHeight: '80px' }} />
-      </div>
-      <div style={{ gridColumn: '1 / -1' }}>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Communication Address</label>
-        <textarea value={memberForm.communicationAddress} onChange={(e) => setMemberForm({ ...memberForm, communicationAddress: e.target.value })} style={{ ...inp, minHeight: '80px' }} placeholder="If different from permanent address" />
-      </div>
-      <div style={{ gridColumn: '1 / -1' }}>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Office Address</label>
-        <textarea value={memberForm.officeAddress} onChange={(e) => setMemberForm({ ...memberForm, officeAddress: e.target.value })} style={{ ...inp, minHeight: '80px' }} />
-      </div>
-      <div style={{ gridColumn: '1 / -1' }}>
-        <button type="submit" style={{ ...btn, width: '100%' }}>Submit Member Details</button>
-      </div>
-    </form>
-  </div>
-)}
+
 {tab === 'admin-v' && isAdmin && (
   <div style={card}>
     <div style={{ marginBottom: '1.5rem' }}>
@@ -1409,7 +1337,9 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <button onClick={async () => {
           if (confirm(`Delete ${selectedVisitors.length} selected visitor(s)?`)) {
             try {
-              for (const fid of selectedVisitors) { await deleteVisitor(fid); }
+              for (const fid of selectedVisitors) {
+                await deleteVisitor(fid);
+              }
               setVisitors(visitors.filter(v => !selectedVisitors.includes(v.firebaseId)));
               setSelectedVisitors([]);
             } catch(e) { alert('Error deleting!'); }
@@ -1426,7 +1356,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
     <div style={{ position: 'relative', flex: '2', minWidth: '220px' }}>
       <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
-      <input type="text" placeholder="Search by ID, Name, Company, Email, To Meet..." value={visitorSearch} onChange={(e) => setVisitorSearch(e.target.value)} style={{ ...inp, paddingLeft: '2.5rem' }} />
+      <input type="text" placeholder="Search by ID, Name, Company, Email..." value={visitorSearch} onChange={(e) => setVisitorSearch(e.target.value)} style={{ ...inp, paddingLeft: '2.5rem' }} />
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
       <label style={{ color: '#6b7280', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>From:</label>
@@ -1440,8 +1370,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       <button onClick={() => { setVisitorDateFrom(''); setVisitorDateTo(''); }} style={{ ...btn, background: '#e5e7eb', color: '#1f2937', padding: '0.75rem 1rem' }}>Clear</button>
     )}
   </div>
-</div>    
-    <h3 style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '2rem' }}>{editV ? 'Edit' : 'Add'} Visitor</h3>
+</div>    <h3 style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '2rem' }}>{editV ? 'Edit' : 'Add'} Visitor</h3>
     <form onSubmit={submitV} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '0.5rem' }}>
         <select value={vForm.prefix} onChange={(e) => setVForm({ ...vForm, prefix: e.target.value })} style={inp}>
@@ -1482,38 +1411,15 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <tr style={{ borderBottom: '2px solid #2B4C7E' }}>
               <th style={{ padding: '0.75rem' }}>
                 <input type="checkbox" onChange={(e) => {
-                  if (e.target.checked) setSelectedVisitors(getFilteredVisitors().map(v => v.firebaseId).filter(Boolean));
+                  if (e.target.checked) setSelectedVisitors(getFilteredVisitors().map(v => v.firebaseId));
                   else setSelectedVisitors([]);
-                }} checked={selectedVisitors.length > 0 && selectedVisitors.length === getFilteredVisitors().length} />
+                }} checked={selectedVisitors.length === getFilteredVisitors().length && getFilteredVisitors().length > 0} />
               </th>
-              {[
-                { label: 'ID', field: 'id' },
-                { label: 'Name', field: 'name' },
-                { label: 'Email', field: null },
-                { label: 'Phone', field: null },
-                { label: 'Company', field: 'company' },
-                { label: 'Purpose', field: null },
-                { label: 'To Meet', field: 'toMeet' },
-                { label: 'Date/Time', field: 'time' },
-                { label: 'Actions', field: null },
-              ].map(({ label, field }) => (
-                <th key={label} onClick={() => {
-                  if (!field) return;
-                  if (visitorSortField === field) setVisitorSortDir(d => d === 'asc' ? 'desc' : 'asc');
-                  else { setVisitorSortField(field); setVisitorSortDir('asc'); }
-                }} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600', cursor: field ? 'pointer' : 'default', userSelect: 'none', whiteSpace: 'nowrap' }}>
-                  {label}
-                  {field && visitorSortField === field && (
-                    <span style={{ marginLeft: '4px', fontSize: '0.75rem' }}>{visitorSortDir === 'asc' ? '▲' : '▼'}</span>
-                  )}
-                  {field && visitorSortField !== field && (
-                    <span style={{ marginLeft: '4px', fontSize: '0.75rem', color: '#d1d5db' }}>⇅</span>
-                  )}
-                </th>
-              ))}            </tr>
+              {['ID', 'Name', 'Email', 'Phone', 'Company', 'Purpose', 'To Meet', 'Date/Time', 'Actions'].map(h => <th key={h} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600' }}>{h}</th>)}
+            </tr>
           </thead>
           <tbody>
-            {[...getFilteredVisitors()].sort((a, b) => parseVisitorId(b.id) - parseVisitorId(a.id)).map((v, i) => (
+            {[...getFilteredVisitors()].sort((a, b) => (a.id || '').localeCompare(b.id || '')).map((v, i) => (
               <tr key={v.id} style={{ borderBottom: '1px solid #e5e7eb', background: selectedVisitors.includes(v.firebaseId) ? 'rgba(45,74,126,0.07)' : i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
                 <td style={{ padding: '0.75rem' }}>
                   <input type="checkbox" checked={selectedVisitors.includes(v.firebaseId)} onChange={(e) => {
@@ -1728,16 +1634,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       ))}
     </div>
-    {bookings.length > 0 ? [...getFilteredBookings()].sort((a, b) => {
-  const parseId = (id) => {
-    try {
-      const p = (id || '').split('-');
-      const d = p[1] || '01012000000';
-      return parseInt(d.slice(4,8)) * 100000000 + parseInt(d.slice(2,4)) * 1000000 + parseInt(d.slice(0,2)) * 10000 + parseInt(p[2] || '0');
-    } catch { return 0; }
-  };
-  return parseId(b.id) - parseId(a.id);
-}).map(b => (
+    {bookings.length > 0 ? getFilteredBookings().map(b => (
       <div key={b.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
@@ -1747,13 +1644,6 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Calendar size={16} style={{ verticalAlign: 'middle' }} /> {b.date} | {b.start} - {b.end}</p>
             <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {b.purpose}</p>
             <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Attendees: {b.attendees}{b.req && ` | Requirements: ${b.req}`}</p>
-            {(b.gstin || b.smartCard) && (
-              <p style={{ color: '#6b7280', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-                {b.gstin && <span>GSTIN: <strong style={{ color: '#1f2937' }}>{b.gstin}</strong></span>}
-                {b.gstin && b.smartCard && <span> | </span>}
-                {b.smartCard && <span>Smart Card: <strong style={{ color: '#1f2937' }}>{b.smartCard}</strong></span>}
-              </p>
-            )}
             {b.msg && <p style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '0.5rem', padding: '0.5rem', background: '#ffffff', borderRadius: '4px' }}><strong>Admin:</strong> {b.msg}</p>}
           </div>
           <span style={{ padding: '0.5rem 1rem', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '600', height: 'fit-content', background: b.status === 'approved' ? 'rgba(13, 140, 79, 0.1)' : b.status === 'rejected' ? 'rgba(220, 38, 38, 0.1)' : 'rgba(245, 166, 35, 0.1)', color: b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623' }}>
@@ -1819,16 +1709,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       ))}
     </div>
-   {coworking.length > 0 ? [...getFilteredCoworking()].sort((a, b) => {
-  const parseId = (id) => {
-    try {
-      const p = (id || '').split('-');
-      const d = p[1] || '01012000000';
-      return parseInt(d.slice(4,8)) * 100000000 + parseInt(d.slice(2,4)) * 1000000 + parseInt(d.slice(0,2)) * 10000 + parseInt(p[2] || '0');
-    } catch { return 0; }
-  };
-  return parseId(b.id) - parseId(a.id);
-}).map(c => (
+    {coworking.length > 0 ? getFilteredCoworking().map(c => (
       <div key={c.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
@@ -1837,14 +1718,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Mail size={16} style={{ verticalAlign: 'middle' }} /> {c.email} | <Phone size={16} style={{ verticalAlign: 'middle' }} /> {c.fullPhone || c.phone}</p>
             <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Seats:</strong> {c.seats} | <strong>Duration:</strong> {c.duration}</p>
             <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Start:</strong> {c.startDate}</p>
-           <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {c.purpose}</p>
-            {(c.gstin || c.smartCard) && (
-              <p style={{ color: '#6b7280', margin: '0.25rem 0', fontSize: '0.9rem' }}>
-                {c.gstin && <span>GSTIN: <strong style={{ color: '#1f2937' }}>{c.gstin}</strong></span>}
-                {c.gstin && c.smartCard && <span> | </span>}
-                {c.smartCard && <span>Smart Card: <strong style={{ color: '#1f2937' }}>{c.smartCard}</strong></span>}
-              </p>
-            )}
+            <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {c.purpose}</p>
             {c.msg && <p style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '0.5rem', padding: '0.5rem', background: '#ffffff', borderRadius: '4px' }}><strong>Admin:</strong> {c.msg}</p>}
           </div>
           <span style={{ padding: '0.5rem 1rem', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '600', height: 'fit-content', background: c.status === 'approved' ? 'rgba(13, 140, 79, 0.1)' : c.status === 'rejected' ? 'rgba(220, 38, 38, 0.1)' : 'rgba(245, 166, 35, 0.1)', color: c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623' }}>
@@ -1947,89 +1821,374 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     </div>
   </div>
 )}
+
+      
+{tab === 'cowork-member' && (
+  <div style={card}>
+    <button onClick={() => setTab('home')} style={{ ...btn, marginBottom: '1rem' }}>← Back</button>
+    <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '0.5rem' }}>Coworking Member Registration</h2>
+    <p style={{ color: '#6b7280', marginBottom: '1.5rem', fontSize: '0.95rem' }}>Enter the Booking ID shared by your incharge to register your details.</p>
+    <form onSubmit={submitMember} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+      <div style={{ gridColumn: '1 / -1', background: '#EFF6FF', border: '2px solid #2B4C7E', borderRadius: '8px', padding: '1rem' }}>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '700' }}>Booking ID * <span style={{ fontWeight: '400', fontSize: '0.85rem' }}>(e.g. C-01072026-001)</span></label>
+        <input type="text" value={memberForm.bookingId} onChange={(e) => setMemberForm({ ...memberForm, bookingId: e.target.value })} required style={inp} placeholder="Enter your Booking ID" />
+      </div>
+      {[['Full Name *','name','text',true],['Designation *','designation','text',true],['Email ID *','email','email',true],["Father's Name *",'fatherName','text',true]].map(([label,field,type,req]) => (
+        <div key={field}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>{label}</label>
+          <input type={type} value={memberForm[field]} onChange={(e) => setMemberForm({...memberForm,[field]:e.target.value})} required={req} style={inp} /></div>
+      ))}
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Contact Number *</label>
+        <input type="tel" value={memberForm.contactNumber} onChange={(e) => setMemberForm({...memberForm,contactNumber:e.target.value.replace(/\D/g,'')})} maxLength="10" required style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Alternate Contact</label>
+        <input type="tel" value={memberForm.alternateContact} onChange={(e) => setMemberForm({...memberForm,alternateContact:e.target.value.replace(/\D/g,'')})} maxLength="10" style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Gender *</label>
+        <select value={memberForm.gender} onChange={(e) => setMemberForm({...memberForm,gender:e.target.value})} required style={inp}>
+          <option value="">Select</option>{['Male','Female','Other'].map(g=><option key={g} value={g}>{g}</option>)}</select></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Aadhar Number *</label>
+        <input type="text" value={memberForm.aadharNo} onChange={(e) => setMemberForm({...memberForm,aadharNo:e.target.value.replace(/\D/g,'')})} maxLength="12" required style={inp} placeholder="12-digit" /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date of Birth *</label>
+        <input type="date" value={memberForm.dob} onChange={(e) => setMemberForm({...memberForm,dob:e.target.value})} required style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Marital Status</label>
+        <select value={memberForm.maritalStatus} onChange={(e) => setMemberForm({...memberForm,maritalStatus:e.target.value})} style={inp}>
+          <option value="">Select</option>{['Single','Married','Divorced','Widowed'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Blood Group</label>
+        <select value={memberForm.bloodGroup} onChange={(e) => setMemberForm({...memberForm,bloodGroup:e.target.value})} style={inp}>
+          <option value="">Select</option>{['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(b=><option key={b} value={b}>{b}</option>)}</select></div>
+      <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Permanent Address *</label>
+        <textarea value={memberForm.permanentAddress} onChange={(e) => setMemberForm({...memberForm,permanentAddress:e.target.value})} required style={{ ...inp, minHeight: '80px' }} /></div>
+      <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Communication Address</label>
+        <textarea value={memberForm.communicationAddress} onChange={(e) => setMemberForm({...memberForm,communicationAddress:e.target.value})} style={{ ...inp, minHeight: '80px' }} placeholder="If different from permanent address" /></div>
+      <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Office Address</label>
+        <textarea value={memberForm.officeAddress} onChange={(e) => setMemberForm({...memberForm,officeAddress:e.target.value})} style={{ ...inp, minHeight: '80px' }} /></div>
+      <div style={{ gridColumn: '1 / -1' }}><button type="submit" style={{ ...btn, width: '100%' }}>Submit Member Details</button></div>
+    </form>
+  </div>
+)}
+
 {tab === 'admin-cm' && isAdmin && (
   <div style={card}>
     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
       <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Coworking Members ({coworkingMembers.length})</h2>
-      <button onClick={() => exportToExcel(coworkingMembers, 'StartupTN_CoworkingMembers')} style={{ ...btn, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <Download size={18} /> Export Excel
-      </button>
+      <button onClick={() => exportToExcel(coworkingMembers, 'StartupTN_CoworkingMembers')} style={{ ...btn, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Download size={18} /> Export Excel</button>
     </div>
-    {coworking.length > 0 ? (
-      [...coworking].sort((a, b) => {
-        const parseId = (id) => { try { const p = (id||'').split('-'); const d = p[1]||'01012000000'; return parseInt(d.slice(4,8))*100000000+parseInt(d.slice(2,4))*1000000+parseInt(d.slice(0,2))*10000+parseInt(p[2]||'0'); } catch{return 0;} };
-        return parseId(b.id) - parseId(a.id);
-      }).map(cw => {
-        const members = coworkingMembers.filter(m => m.bookingId === cw.id);
+    {(() => {
+      const parseId = (id) => { try { const p=(id||'').split('-'); const d=p[1]||'01012000000'; return parseInt(d.slice(4,8))*100000000+parseInt(d.slice(2,4))*1000000+parseInt(d.slice(0,2))*10000+parseInt(p[2]||'0'); } catch{return 0;} };
+      const sortedBookings = [...coworking].sort((a,b) => parseId(b.id)-parseId(a.id));
+      const companies = [...new Set(sortedBookings.map(cw=>cw.company).filter(Boolean))].sort();
+      if (companies.length === 0) return <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No coworking bookings yet.</p>;
+      return companies.map(company => {
+        const companyBookings = sortedBookings.filter(cw=>cw.company===company);
+        const companyMembers = coworkingMembers.filter(m=>companyBookings.some(cw=>cw.id===m.bookingId));
+        const totalSeats = companyBookings.reduce((sum,cw)=>sum+parseInt(cw.seats||0),0);
+        const isExpanded = expandedCompany === company;
         return (
-          <div key={cw.id} style={{ background: '#f3f4f6', borderRadius: '8px', marginBottom: '1.5rem', border: `2px solid ${cw.status === 'approved' ? '#059669' : '#e5e7eb'}`, overflow: 'hidden' }}>
-            <div style={{ background: cw.status === 'approved' ? 'rgba(5,150,105,0.08)' : '#ffffff', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div>
-                <span style={{ color: '#2B4C7E', fontWeight: '700', fontSize: '1rem' }}>{cw.id}</span>
-                <span style={{ color: '#6b7280', marginLeft: '1rem' }}>{cw.name} — {cw.company}</span>
-                <span style={{ color: '#6b7280', marginLeft: '1rem', fontSize: '0.9rem' }}>Seats: {cw.seats} | Start: {cw.startDate}</span>
+          <div key={company} style={{ marginBottom: '1rem', border: '2px solid #2B4C7E', borderRadius: '10px', overflow: 'hidden' }}>
+            <div onClick={() => setExpandedCompany(isExpanded ? null : company)}
+              style={{ background: isExpanded ? '#2B4C7E' : '#EFF6FF', padding: '1rem 1.5rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <span style={{ fontSize: '1.1rem', fontWeight: '700', color: isExpanded ? '#ffffff' : '#2B4C7E' }}>{company}</span>
+                <span style={{ fontSize: '0.85rem', color: isExpanded ? '#F5A623' : '#6b7280' }}>{companyBookings.length} booking(s) | {totalSeats} total seats</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: '600', background: cw.status === 'approved' ? 'rgba(5,150,105,0.1)' : 'rgba(245,166,35,0.1)', color: cw.status === 'approved' ? '#059669' : '#F5A623' }}>{cw.status.toUpperCase()}</span>
-                <span style={{ color: '#2B4C7E', fontWeight: '600', fontSize: '0.9rem' }}>Members: {members.length} / {cw.seats}</span>
+                <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: '600', background: companyMembers.length>0?'rgba(5,150,105,0.15)':'rgba(245,166,35,0.15)', color: companyMembers.length>0?'#059669':'#F5A623' }}>Members: {companyMembers.length} / {totalSeats}</span>
+                <span style={{ color: isExpanded ? '#ffffff' : '#2B4C7E', fontSize: '1.2rem', fontWeight: '700' }}>{isExpanded ? '▲' : '▼'}</span>
               </div>
             </div>
-            {members.length > 0 ? (
-              <div style={{ overflowX: 'auto', padding: '0 1rem 1rem' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', marginTop: '0.5rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #2B4C7E' }}>
-                      {['#', 'Name', 'Designation', 'Contact', 'Alt Contact', 'Email', 'Gender', 'Aadhar', 'DOB', 'Marital', 'Blood', "Father's Name", 'Permanent Address', 'Communication Address', 'Office Address', 'Action'].map(h => (
-                        <th key={h} style={{ padding: '0.5rem 0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600', whiteSpace: 'nowrap' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {members.map((m, idx) => (
-                      <tr key={m.firebaseId} style={{ borderBottom: '1px solid #e5e7eb', background: idx % 2 === 0 ? '#ffffff' : '#f9fafb' }}>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{idx + 1}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#1f2937', whiteSpace: 'nowrap' }}>{m.name}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.designation}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.contactNumber}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.alternateContact || '—'}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.email}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.gender}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.aadharNo}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.dob}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.maritalStatus || '—'}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.bloodGroup || '—'}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.fatherName}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '150px' }}>{m.permanentAddress}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '150px' }}>{m.communicationAddress || '—'}</td>
-                        <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '150px' }}>{m.officeAddress || '—'}</td>
-                        <td style={{ padding: '0.5rem 0.75rem' }}>
-                          <button onClick={async () => {
-                            if (confirm('Delete this member?')) {
-                              try {
-                                await deleteCoworkingMember(m.firebaseId);
-                                setCoworkingMembers(coworkingMembers.filter(x => x.firebaseId !== m.firebaseId));
-                              } catch(e) { alert('Error deleting!'); }
-                            }
-                          }} style={{ padding: '0.35rem 0.6rem', background: 'rgba(220,38,38,0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {isExpanded && (
+              <div style={{ padding: '1rem 1.5rem' }}>
+                <div style={{ marginBottom: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {companyBookings.map(cw=>(
+                    <span key={cw.id} style={{ padding: '0.35rem 0.75rem', background: '#f3f4f6', borderRadius: '8px', fontSize: '0.8rem', border: '1px solid #e5e7eb' }}>
+                      <strong style={{ color: '#2B4C7E' }}>{cw.id}</strong> — {cw.seats} seat(s) | {cw.startDate} | <span style={{ color: cw.status==='approved'?'#059669':'#F5A623', fontWeight: '600' }}>{cw.status.toUpperCase()}</span>
+                    </span>
+                  ))}
+                </div>
+                <h4 style={{ color: '#2B4C7E', fontWeight: '600', marginBottom: '0.75rem' }}>Team Members ({companyMembers.length})</h4>
+                {companyMembers.length > 0 ? (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                      <thead><tr style={{ borderBottom: '2px solid #2B4C7E', background: '#f9fafb' }}>
+                        {['#','Booking ID','Name','Designation','Contact','Alt Contact','Email','Gender','Aadhar','DOB','Marital','Blood',"Father's Name",'Permanent Addr','Comm Addr','Office Addr','Del'].map(h=>(
+                          <th key={h} style={{ padding: '0.5rem 0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}</tr></thead>
+                      <tbody>{companyMembers.map((m,idx)=>(
+                        <tr key={m.firebaseId} style={{ borderBottom: '1px solid #e5e7eb', background: idx%2===0?'#ffffff':'#f9fafb' }}>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{idx+1}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#2B4C7E', fontWeight: '600', whiteSpace: 'nowrap' }}>{m.bookingId}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#1f2937', whiteSpace: 'nowrap' }}>{m.name}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.designation}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.contactNumber}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.alternateContact||'—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.email}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.gender}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.aadharNo}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.dob}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.maritalStatus||'—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.bloodGroup||'—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.fatherName}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '120px' }}>{m.permanentAddress}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '120px' }}>{m.communicationAddress||'—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '120px' }}>{m.officeAddress||'—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <button onClick={async()=>{ if(confirm('Delete?')){ try{ await deleteCoworkingMember(m.firebaseId); setCoworkingMembers(coworkingMembers.filter(x=>x.firebaseId!==m.firebaseId)); }catch(e){alert('Error!');} }}} style={{ padding: '0.35rem 0.6rem', background: 'rgba(220,38,38,0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Trash2 size={14}/></button>
+                          </td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                ) : <p style={{ color: '#6b7280', fontStyle: 'italic' }}>No members registered yet.</p>}
               </div>
-            ) : (
-              <p style={{ color: '#6b7280', padding: '1rem 1.5rem', margin: 0, fontStyle: 'italic' }}>No members registered yet for this booking.</p>
             )}
           </div>
         );
-      })
-    ) : <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No coworking bookings yet.</p>}
+      });
+    })()}
   </div>
 )}
+
+{tab === 'admin-r' && isAdmin && (
+  <div style={card}>
+    <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1.5rem' }}>Reports & Analytics</h2>
+
+    {/* Archive & Clear Section */}
+    <div style={{ background: '#FFF9E6', border: '2px solid #F5A623', borderRadius: '10px', padding: '1.5rem', marginBottom: '2rem' }}>
+      <h3 style={{ color: '#2B4C7E', fontWeight: '700', margin: '0 0 0.5rem' }}>📦 Archive & Clear Monthly Data</h3>
+      <p style={{ color: '#6b7280', fontSize: '0.9rem', margin: '0 0 1rem' }}>Select a past month to archive its summary and delete raw records. Archived data is saved permanently for the dashboard.</p>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <input type="month" value={archiveMonth} onChange={(e) => setArchiveMonth(e.target.value)} style={{ ...inp, maxWidth: '200px' }} max={new Date().toISOString().slice(0,7)} />
+        <button onClick={handleArchiveAndClear} disabled={archiving || !archiveMonth} style={{ ...btn, background: archiving ? '#9ca3af' : '#F5A623', cursor: archiving ? 'not-allowed' : 'pointer' }}>
+          {archiving ? 'Archiving...' : '📦 Archive & Clear'}
+        </button>
+      </div>
+    </div>
+
+    {/* KPI Summary - Live + Archived */}
+    {(() => {
+      const allArchivedVisitors = monthlyArchives.reduce((sum, a) => sum + (a.visitors?.total || 0), 0);
+      const allArchivedBookings = monthlyArchives.reduce((sum, a) => sum + (a.bookings?.total || 0), 0);
+      const allArchivedCoworking = monthlyArchives.reduce((sum, a) => sum + (a.coworking?.total || 0), 0);
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+          {[
+            { label: 'Total Visitors (all time)', live: visitors.length, archived: allArchivedVisitors, color: '#2B4C7E' },
+            { label: 'Total Bookings (all time)', live: bookings.length, archived: allArchivedBookings, color: '#059669' },
+            { label: 'Coworking Requests (all time)', live: coworking.length, archived: allArchivedCoworking, color: '#F5A623' },
+            { label: 'Months Archived', live: monthlyArchives.length, archived: 0, color: '#7c3aed', noSum: true },
+          ].map(item => (
+            <div key={item.label} style={{ background: '#f9fafb', borderRadius: '10px', padding: '1rem 1.25rem', border: `2px solid ${item.color}20` }}>
+              <p style={{ color: '#6b7280', fontSize: '0.8rem', margin: '0 0 0.5rem' }}>{item.label}</p>
+              <p style={{ color: item.color, fontSize: '1.8rem', fontWeight: '700', margin: 0 }}>{item.noSum ? item.live : item.live + item.archived}</p>
+              {!item.noSum && <p style={{ color: '#9ca3af', fontSize: '0.75rem', margin: '0.25rem 0 0' }}>Live: {item.live} | Archived: {item.archived}</p>}
+            </div>
+          ))}
         </div>
-            {emailModal && (
+      );
+    })()}
+
+    {/* Monthly Archive History */}
+    <h3 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1rem' }}>📅 Monthly Archive History</h3>
+    {monthlyArchives.length === 0 ? (
+      <p style={{ color: '#6b7280', fontStyle: 'italic' }}>No archived months yet. Use the archive tool above to save monthly summaries.</p>
+    ) : (
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid #2B4C7E', background: '#f9fafb' }}>
+              {['Month','Visitors','Total Bookings','Approved','Rejected','Coworking','CW Approved','Archived On'].map(h=>(
+                <th key={h} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600', whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[...monthlyArchives].sort((a,b)=>b.month.localeCompare(a.month)).map((a,i)=>(
+              <tr key={a.month} style={{ borderBottom: '1px solid #e5e7eb', background: i%2===0?'#ffffff':'#f9fafb' }}>
+                <td style={{ padding: '0.75rem', color: '#2B4C7E', fontWeight: '600' }}>{a.label}</td>
+                <td style={{ padding: '0.75rem', color: '#1f2937' }}>{a.visitors?.total || 0}</td>
+                <td style={{ padding: '0.75rem', color: '#1f2937' }}>{a.bookings?.total || 0}</td>
+                <td style={{ padding: '0.75rem', color: '#059669', fontWeight: '600' }}>{a.bookings?.approved || 0}</td>
+                <td style={{ padding: '0.75rem', color: '#dc2626', fontWeight: '600' }}>{a.bookings?.rejected || 0}</td>
+                <td style={{ padding: '0.75rem', color: '#1f2937' }}>{a.coworking?.total || 0}</td>
+                <td style={{ padding: '0.75rem', color: '#059669', fontWeight: '600' }}>{a.coworking?.approved || 0}</td>
+                <td style={{ padding: '0.75rem', color: '#6b7280', fontSize: '0.8rem' }}>{a.archivedAt}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+
+    {/* Hall breakdown from archives */}
+    {monthlyArchives.length > 0 && (
+      <div style={{ marginTop: '2rem' }}>
+        <h3 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1rem' }}>🏢 Hall Utilization (archived months)</h3>
+        {(() => {
+          const hallTotals = {};
+          monthlyArchives.forEach(a => {
+            Object.entries(a.bookings?.byHall || {}).forEach(([hall, data]) => {
+              if (!hallTotals[hall]) hallTotals[hall] = { bookings: 0, hours: 0 };
+              hallTotals[hall].bookings += data.bookings || 0;
+              hallTotals[hall].hours += data.hours || 0;
+            });
+          });
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+              {Object.entries(hallTotals).map(([hall, data]) => (
+                <div key={hall} style={{ background: '#f9fafb', borderRadius: '10px', padding: '1rem', border: '1px solid #e5e7eb' }}>
+                  <p style={{ color: '#2B4C7E', fontWeight: '600', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>{hall}</p>
+                  <p style={{ color: '#1f2937', fontSize: '1.4rem', fontWeight: '700', margin: 0 }}>{data.bookings}</p>
+                  <p style={{ color: '#6b7280', fontSize: '0.8rem', margin: '0.25rem 0 0' }}>bookings | {Math.round(data.hours)}h utilized</p>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
+    )}
+
+    {/* Coworking company breakdown from archives */}
+    {monthlyArchives.length > 0 && (
+      <div style={{ marginTop: '2rem' }}>
+        <h3 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1rem' }}>🪑 Coworking by Company (archived months)</h3>
+        {(() => {
+          const compTotals = {};
+          monthlyArchives.forEach(a => {
+            Object.entries(a.coworking?.byCompany || {}).forEach(([comp, seats]) => {
+              compTotals[comp] = (compTotals[comp] || 0) + seats;
+            });
+          });
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+              {Object.entries(compTotals).sort((a,b)=>b[1]-a[1]).map(([comp, seats]) => (
+                <div key={comp} style={{ background: '#f9fafb', borderRadius: '10px', padding: '1rem', border: '1px solid #e5e7eb' }}>
+                  <p style={{ color: '#2B4C7E', fontWeight: '600', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>{comp}</p>
+                  <p style={{ color: '#1f2937', fontSize: '1.4rem', fontWeight: '700', margin: 0 }}>{seats}</p>
+                  <p style={{ color: '#6b7280', fontSize: '0.8rem', margin: '0.25rem 0 0' }}>total seats (all time)</p>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
+    )}
+  </div>
+)}
+
+{tab === 'feedback' && (
+  <div style={card}>
+    <button onClick={() => setTab('home')} style={{ ...btn, marginBottom: '1rem' }}>← Back</button>
+    <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '0.5rem' }}>General Feedback</h2>
+    <p style={{ color: '#6b7280', marginBottom: '1.5rem', fontSize: '0.95rem' }}>We value your feedback. Please share your experience with us.</p>
+    <form onSubmit={submitFeedback} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Name *</label>
+        <input type="text" value={feedbackForm.name} onChange={(e) => setFeedbackForm({...feedbackForm, name: e.target.value})} required style={inp} />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Email</label>
+        <input type="email" value={feedbackForm.email} onChange={(e) => setFeedbackForm({...feedbackForm, email: e.target.value})} style={inp} />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Phone</label>
+        <input type="tel" value={feedbackForm.phone} onChange={(e) => setFeedbackForm({...feedbackForm, phone: e.target.value.replace(/\D/g, '')})} maxLength="10" style={inp} />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Category *</label>
+        <select value={feedbackForm.category} onChange={(e) => setFeedbackForm({...feedbackForm, category: e.target.value})} required style={inp}>
+          <option value="">Select category</option>
+          {['Visitor Experience','Hall Booking','Coworking Space','Events','Staff & Service','Facilities & Amenities','General'].map(c => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Rating *</label>
+        <select value={feedbackForm.rating} onChange={(e) => setFeedbackForm({...feedbackForm, rating: e.target.value})} required style={inp}>
+          <option value="">Select rating</option>
+          {['⭐ 1 - Poor','⭐⭐ 2 - Below Average','⭐⭐⭐ 3 - Average','⭐⭐⭐⭐ 4 - Good','⭐⭐⭐⭐⭐ 5 - Excellent'].map(r => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Your Feedback *</label>
+        <textarea value={feedbackForm.message} onChange={(e) => setFeedbackForm({...feedbackForm, message: e.target.value})} required style={{ ...inp, minHeight: '120px' }} placeholder="Please share your experience, suggestions, or concerns..." />
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <button type="submit" style={{ ...btn, width: '100%' }}>Submit Feedback</button>
+      </div>
+    </form>
+  </div>
+)}
+
+{tab === 'admin-fb' && isAdmin && (
+  <div style={card}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+      <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Feedback ({feedbacks.length})</h2>
+      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={feedbackFilter} onChange={(e) => setFeedbackFilter(e.target.value)} style={{ ...inp, minWidth: '180px' }}>
+          <option value="all">All Categories</option>
+          {['Visitor Experience','Hall Booking','Coworking Space','Events','Staff & Service','Facilities & Amenities','General'].map(c => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <button onClick={() => exportToExcel(feedbacks, 'StartupTN_Feedback')} style={{ ...btn, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Download size={18} /> Export Excel
+        </button>
+      </div>
+    </div>
+
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+      {[
+        { label: 'Total Feedback', value: feedbacks.length, color: '#2B4C7E' },
+        { label: 'Avg Rating', value: feedbacks.length > 0 ? (feedbacks.reduce((sum, f) => sum + parseInt(f.rating?.charAt(1) || 0), 0) / feedbacks.length).toFixed(1) + ' ⭐' : '—', color: '#F5A623' },
+        { label: '5 Star', value: feedbacks.filter(f => f.rating?.startsWith('⭐⭐⭐⭐⭐')).length, color: '#059669' },
+        { label: '1-2 Star', value: feedbacks.filter(f => f.rating?.startsWith('⭐ 1') || f.rating?.startsWith('⭐⭐ 2')).length, color: '#dc2626' },
+      ].map(item => (
+        <div key={item.label} style={{ background: '#f9fafb', borderRadius: '10px', padding: '1rem', border: `2px solid ${item.color}20`, textAlign: 'center' }}>
+          <p style={{ color: '#6b7280', fontSize: '0.8rem', margin: '0 0 0.5rem' }}>{item.label}</p>
+          <p style={{ color: item.color, fontSize: '1.6rem', fontWeight: '700', margin: 0 }}>{item.value}</p>
+        </div>
+      ))}
+    </div>
+
+    {feedbacks.filter(f => feedbackFilter === 'all' || f.category === feedbackFilter).length === 0 ? (
+      <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No feedback yet.</p>
+    ) : (
+      feedbacks
+        .filter(f => feedbackFilter === 'all' || f.category === feedbackFilter)
+        .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''))
+        .map(f => (
+          <div key={f.firebaseId} style={{ background: '#f9fafb', borderRadius: '10px', padding: '1.25rem 1.5rem', marginBottom: '1rem', border: '1px solid #e5e7eb' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <div>
+                <span style={{ fontWeight: '700', color: '#1f2937', fontSize: '1rem' }}>{f.name}</span>
+                {f.email && <span style={{ color: '#6b7280', fontSize: '0.85rem', marginLeft: '0.75rem' }}>{f.email}</span>}
+                {f.phone && <span style={{ color: '#6b7280', fontSize: '0.85rem', marginLeft: '0.75rem' }}>📞 {f.phone}</span>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ padding: '0.25rem 0.75rem', background: 'rgba(43,76,126,0.1)', color: '#2B4C7E', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '600' }}>{f.category}</span>
+                <span style={{ fontSize: '0.9rem' }}>{f.rating}</span>
+                <button onClick={async () => {
+                  if (confirm('Delete this feedback?')) {
+                    try {
+                      await deleteFeedback(f.firebaseId);
+                      setFeedbacks(feedbacks.filter(x => x.firebaseId !== f.firebaseId));
+                    } catch(e) { alert('Error deleting!'); }
+                  }
+                }} style={{ padding: '0.35rem 0.6rem', background: 'rgba(220,38,38,0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+            <p style={{ color: '#1f2937', margin: '0 0 0.5rem', lineHeight: '1.6' }}>{f.message}</p>
+            <p style={{ color: '#9ca3af', fontSize: '0.78rem', margin: 0 }}>{f.submittedAt}</p>
+          </div>
+        ))
+    )}
+  </div>
+)}
+
+      {emailModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: '#ffffff', borderRadius: '12px', padding: '2rem', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto', border: '2px solid #2B4C7E' }}>
             <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginTop: 0 }}>📧 Email Notification</h2>
