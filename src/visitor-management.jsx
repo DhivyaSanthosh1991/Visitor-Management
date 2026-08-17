@@ -1417,7 +1417,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             </tr>
           </thead>
           <tbody>
-            {[...getFilteredVisitors()].sort((a, b) => (a.id || '').localeCompare(b.id || '')).map((v, i) => (
+            {[...getFilteredVisitors()].sort((a, b) => parseVisitorId(b.id) - parseVisitorId(a.id)).map((v, i) => (
               <tr key={v.id} style={{ borderBottom: '1px solid #e5e7eb', background: selectedVisitors.includes(v.firebaseId) ? 'rgba(45,74,126,0.07)' : i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
                 <td style={{ padding: '0.75rem' }}>
                   <input type="checkbox" checked={selectedVisitors.includes(v.firebaseId)} onChange={(e) => {
