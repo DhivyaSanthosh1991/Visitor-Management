@@ -674,20 +674,16 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     return cleaned;
   });
   
-  // Sort by ID first, then by date ascending within same ID prefix
-  cleanedData.sort((a, b) => {
-    // Primary: sort by ID (which encodes date + sequence)
-    const idCompare = (a.id || '').localeCompare(b.id || '');
-    if (idCompare !== 0) return idCompare;
-    // Secondary: sort by time ascending
-    const parseDate = (t) => {
-      if (!t) return new Date(0);
-      const parts = t.split(',')[0].trim().split('/');
-      return parts.length === 3 ? new Date(`${parts[2]}-${parts[1]}-${parts[0]}`) : new Date(0);
-    };
-    return parseDate(a.time) - parseDate(b.time);
-  });
-
+  // Sort by ID ascending (DDMMYYYY parsed correctly as YYYYMMDD)
+  const parseIdForExcel = (id) => {
+    try {
+      const p = (id || '').split('-');
+      const d = p[1] || '01012000000';
+      return parseInt(d.slice(4,8))*100000000 + parseInt(d.slice(2,4))*1000000 + parseInt(d.slice(0,2))*10000 + parseInt(p[2]||'0');
+    } catch { return 0; }
+  };
+  cleanedData.sort((a, b) => parseIdForExcel(a.id) - parseIdForExcel(b.id));
+   
   // Remove updatedAt from all rows
   cleanedData.forEach(item => { delete item.updatedAt; });
 
@@ -1632,7 +1628,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       ))}
     </div>
-    {bookings.length > 0 ? getFilteredBookings().map(b => (
+    {bookings.length > 0 ? [...getFilteredBookings()].sort((a, b) => parseBookingId(b.id) - parseBookingId(a.id)).map(b => (
       <div key={b.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
@@ -1707,7 +1703,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       ))}
     </div>
-    {coworking.length > 0 ? getFilteredCoworking().map(c => (
+    {coworking.length > 0 ? [...getFilteredCoworking()].sort((a, b) => parseBookingId(b.id) - parseBookingId(a.id)).map(c => (
       <div key={c.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div>
