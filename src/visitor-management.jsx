@@ -1944,132 +1944,344 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   </div>
 )}
 
-{tab === 'admin-r' && isAdmin && (
-  <div style={card}>
-    <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1.5rem' }}>Reports & Analytics</h2>
+{tab === 'admin-r' && isAdmin && (() => {
+  const TOTAL_SEATS = 21;
+  const WORK_HOURS = 8;
 
-    {/* Archive & Clear Section */}
-    <div style={{ background: '#FFF9E6', border: '2px solid #F5A623', borderRadius: '10px', padding: '1.5rem', marginBottom: '2rem' }}>
-      <h3 style={{ color: '#2B4C7E', fontWeight: '700', margin: '0 0 0.5rem' }}>📦 Archive & Clear Monthly Data</h3>
-      <p style={{ color: '#6b7280', fontSize: '0.9rem', margin: '0 0 1rem' }}>Select a past month to archive its summary and delete raw records. Archived data is saved permanently for the dashboard.</p>
-      <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <input type="month" value={archiveMonth} onChange={(e) => setArchiveMonth(e.target.value)} style={{ ...inp, maxWidth: '200px' }} max={new Date().toISOString().slice(0,7)} />
-        <button onClick={handleArchiveAndClear} disabled={archiving || !archiveMonth} style={{ ...btn, background: archiving ? '#9ca3af' : '#F5A623', cursor: archiving ? 'not-allowed' : 'pointer' }}>
-          {archiving ? 'Archiving...' : '📦 Archive & Clear'}
-        </button>
-      </div>
-    </div>
+  const parseId = (id) => {
+    try {
+      const p=(id||'').split('-'); const d=p[1]||'01012000000';
+      return parseInt(d.slice(4,8))*100000000+parseInt(d.slice(2,4))*1000000+parseInt(d.slice(0,2))*10000+parseInt(p[2]||'0');
+    } catch { return 0; }
+  };
 
-    {/* KPI Summary - Live + Archived */}
-    {(() => {
-      const allArchivedVisitors = monthlyArchives.reduce((sum, a) => sum + (a.visitors?.total || 0), 0);
-      const allArchivedBookings = monthlyArchives.reduce((sum, a) => sum + (a.bookings?.total || 0), 0);
-      const allArchivedCoworking = monthlyArchives.reduce((sum, a) => sum + (a.coworking?.total || 0), 0);
-      return (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-          {[
-            { label: 'Total Visitors (all time)', live: visitors.length, archived: allArchivedVisitors, color: '#2B4C7E' },
-            { label: 'Total Bookings (all time)', live: bookings.length, archived: allArchivedBookings, color: '#059669' },
-            { label: 'Coworking Requests (all time)', live: coworking.length, archived: allArchivedCoworking, color: '#F5A623' },
-            { label: 'Months Archived', live: monthlyArchives.length, archived: 0, color: '#7c3aed', noSum: true },
-          ].map(item => (
-            <div key={item.label} style={{ background: '#f9fafb', borderRadius: '10px', padding: '1rem 1.25rem', border: `2px solid ${item.color}20` }}>
-              <p style={{ color: '#6b7280', fontSize: '0.8rem', margin: '0 0 0.5rem' }}>{item.label}</p>
-              <p style={{ color: item.color, fontSize: '1.8rem', fontWeight: '700', margin: 0 }}>{item.noSum ? item.live : item.live + item.archived}</p>
-              {!item.noSum && <p style={{ color: '#9ca3af', fontSize: '0.75rem', margin: '0.25rem 0 0' }}>Live: {item.live} | Archived: {item.archived}</p>}
-            </div>
-          ))}
+  const toYYYYMM = (id) => {
+    try { const d=id.split('-')[1]; return d.slice(4,8)+'-'+d.slice(2,4); } catch { return ''; }
+  };
+
+  const approvedBookings = bookings.filter(b=>b.status==='approved');
+  const pendingBookings  = bookings.filter(b=>b.status==='pending');
+  const rejectedBookings = bookings.filter(b=>b.status==='rejected');
+  const approvedCowork   = coworking.filter(c=>c.status==='approved');
+
+  const totalHoursBooked = approvedBookings.reduce((sum,b)=>{
+    if(b.start&&b.end){
+      const[sh,sm]=b.start.split(':').map(Number);
+      const[eh,em]=b.end.split(':').map(Number);
+      return sum+((eh*60+em)-(sh*60+sm))/60;
+    }
+    return sum;
+  },0);
+
+  const seatsOccupied  = approvedCowork.reduce((s,c)=>s+parseInt(c.seats||0),0);
+  const cwOccPct       = Math.min(100,Math.round((seatsOccupied/TOTAL_SEATS)*100));
+  const hallApprovalPct= bookings.length>0?Math.round((approvedBookings.length/bookings.length)*100):0;
+  const cwApprovalPct  = coworking.length>0?Math.round((approvedCowork.length/coworking.length)*100):0;
+
+  // Per-hall
+  const hallMap = {};
+  approvedBookings.forEach(b=>{
+    const h=b.hallName||'Unknown';
+    if(!hallMap[h]) hallMap[h]={name:h,count:0,hours:0};
+    hallMap[h].count++;
+    if(b.start&&b.end){
+      const[sh,sm]=b.start.split(':').map(Number);
+      const[eh,em]=b.end.split(':').map(Number);
+      hallMap[h].hours+=((eh*60+em)-(sh*60+sm))/60;
+    }
+  });
+  const hallStats = Object.values(hallMap).sort((a,b)=>b.count-a.count);
+  const maxHours  = Math.max(...hallStats.map(h=>h.hours),1);
+
+  // Per-company coworking
+  const cwMap = {};
+  approvedCowork.forEach(c=>{
+    const co=c.company||'Unknown';
+    if(!cwMap[co]) cwMap[co]={name:co,seats:0,bookings:0};
+    cwMap[co].seats+=parseInt(c.seats||0);
+    cwMap[co].bookings++;
+  });
+  const cwStats = Object.values(cwMap).sort((a,b)=>b.seats-a.seats);
+
+  // Monthly breakdown
+  const mMap = {};
+  visitors.forEach(v=>{
+    const ym=toYYYYMM(v.id||'');
+    if(!ym) return;
+    if(!mMap[ym]) mMap[ym]={ym,v:0,b:0,ba:0,c:0,ca:0};
+    mMap[ym].v++;
+  });
+  bookings.forEach(b=>{
+    const ym=toYYYYMM(b.id||'');
+    if(!ym) return;
+    if(!mMap[ym]) mMap[ym]={ym,v:0,b:0,ba:0,c:0,ca:0};
+    mMap[ym].b++;
+    if(b.status==='approved') mMap[ym].ba++;
+  });
+  coworking.forEach(c=>{
+    const ym=toYYYYMM(c.id||'');
+    if(!ym) return;
+    if(!mMap[ym]) mMap[ym]={ym,v:0,b:0,ba:0,c:0,ca:0};
+    mMap[ym].c++;
+    if(c.status==='approved') mMap[ym].ca++;
+  });
+  const months = Object.values(mMap).sort((a,b)=>b.ym.localeCompare(a.ym));
+
+  // Feedback
+  const avgRating = feedbacks.length>0
+    ? (feedbacks.reduce((s,f)=>s+parseInt(f.rating?.match(/\d/)?.[0]||0),0)/feedbacks.length).toFixed(1)
+    : null;
+
+  // All-time (live + archived)
+  const arcV = monthlyArchives.reduce((s,a)=>s+(a.visitors?.total||0),0);
+  const arcB = monthlyArchives.reduce((s,a)=>s+(a.bookings?.total||0),0);
+  const arcC = monthlyArchives.reduce((s,a)=>s+(a.coworking?.total||0),0);
+
+  // Styles
+  const pctColor = p => p>=80?'#dc2626':p>=50?'#F5A623':'#059669';
+  const statCard = { background:'#ffffff', borderRadius:'10px', padding:'1.25rem 1.5rem', border:'1px solid #e5e7eb', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' };
+  const barBg    = { height:'10px', background:'#e5e7eb', borderRadius:'5px', overflow:'hidden', marginTop:'6px' };
+  const barFill  = (p,c) => ({ height:'100%', width:`${Math.min(100,p)}%`, background:c, borderRadius:'5px' });
+  const secHead  = { color:'#2B4C7E', fontWeight:'700', fontSize:'1rem', margin:'0 0 1rem', paddingBottom:'0.5rem', borderBottom:'2px solid #e5e7eb' };
+
+  return (
+    <div style={card}>
+
+      {/* ── HEADER ── */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'2rem', flexWrap:'wrap', gap:'1rem' }}>
+        <h2 style={{ color:'#2B4C7E', fontWeight:'700', margin:0 }}>📊 Reports & Analytics</h2>
+        <div style={{ display:'flex', gap:'0.75rem', alignItems:'center', flexWrap:'wrap' }}>
+          <input type="month" value={archiveMonth} onChange={e=>setArchiveMonth(e.target.value)} style={{ ...inp, maxWidth:'180px' }} max={new Date().toISOString().slice(0,7)} />
+          <button onClick={handleArchiveAndClear} disabled={archiving||!archiveMonth} style={{ ...btn, background:archiving?'#9ca3af':'#F5A623' }}>
+            {archiving?'Archiving...':'📦 Archive & Clear'}
+          </button>
         </div>
-      );
-    })()}
+      </div>
 
-    {/* Monthly Archive History */}
-    <h3 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1rem' }}>📅 Monthly Archive History</h3>
-    {monthlyArchives.length === 0 ? (
-      <p style={{ color: '#6b7280', fontStyle: 'italic' }}>No archived months yet. Use the archive tool above to save monthly summaries.</p>
-    ) : (
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid #2B4C7E', background: '#f9fafb' }}>
-              {['Month','Visitors','Total Bookings','Approved','Rejected','Coworking','CW Approved','Archived On'].map(h=>(
-                <th key={h} style={{ padding: '0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600', whiteSpace: 'nowrap' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {[...monthlyArchives].sort((a,b)=>b.month.localeCompare(a.month)).map((a,i)=>(
-              <tr key={a.month} style={{ borderBottom: '1px solid #e5e7eb', background: i%2===0?'#ffffff':'#f9fafb' }}>
-                <td style={{ padding: '0.75rem', color: '#2B4C7E', fontWeight: '600' }}>{a.label}</td>
-                <td style={{ padding: '0.75rem', color: '#1f2937' }}>{a.visitors?.total || 0}</td>
-                <td style={{ padding: '0.75rem', color: '#1f2937' }}>{a.bookings?.total || 0}</td>
-                <td style={{ padding: '0.75rem', color: '#059669', fontWeight: '600' }}>{a.bookings?.approved || 0}</td>
-                <td style={{ padding: '0.75rem', color: '#dc2626', fontWeight: '600' }}>{a.bookings?.rejected || 0}</td>
-                <td style={{ padding: '0.75rem', color: '#1f2937' }}>{a.coworking?.total || 0}</td>
-                <td style={{ padding: '0.75rem', color: '#059669', fontWeight: '600' }}>{a.coworking?.approved || 0}</td>
-                <td style={{ padding: '0.75rem', color: '#6b7280', fontSize: '0.8rem' }}>{a.archivedAt}</td>
-              </tr>
+      {/* ── ALL-TIME KPI CARDS ── */}
+      <h3 style={secHead}>📈 All-Time Overview</h3>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))', gap:'1rem', marginBottom:'2rem' }}>
+        {[
+          { icon:'👥', label:'Total Visitors',    value:visitors.length+arcV,   sub:`Live: ${visitors.length} | Archived: ${arcV}`,   color:'#2B4C7E' },
+          { icon:'🏢', label:'Hall Bookings',      value:bookings.length+arcB,   sub:`Approved: ${approvedBookings.length}`,             color:'#059669' },
+          { icon:'🪑', label:'Coworking',          value:coworking.length+arcC,  sub:`Approved: ${approvedCowork.length}`,              color:'#7c3aed' },
+          { icon:'📅', label:'Events',             value:events.length,          sub:`Registrations: ${events.reduce((s,e)=>s+(e.regs?.length||0),0)}`, color:'#F5A623' },
+          { icon:'👤', label:'Members Registered', value:coworkingMembers.length, sub:'coworking members',                              color:'#0891b2' },
+          { icon:'💬', label:'Feedback',           value:feedbacks.length,       sub:avgRating?`Avg: ${avgRating} ⭐`:'No ratings yet', color:'#dc2626' },
+        ].map(item=>(
+          <div key={item.label} style={statCard}>
+            <div style={{ fontSize:'1.4rem' }}>{item.icon}</div>
+            <div style={{ color:'#6b7280', fontSize:'0.75rem', margin:'0.25rem 0' }}>{item.label}</div>
+            <div style={{ color:item.color, fontSize:'2rem', fontWeight:'700', lineHeight:1 }}>{item.value}</div>
+            <div style={{ color:'#9ca3af', fontSize:'0.72rem', marginTop:'0.35rem' }}>{item.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── OCCUPANCY RATES ── */}
+      <h3 style={secHead}>🎯 Occupancy & Approval Rates</h3>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))', gap:'1rem', marginBottom:'2rem' }}>
+
+        {/* Coworking occupancy */}
+        <div style={statCard}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem' }}>
+            <span style={{ color:'#1f2937', fontWeight:'600' }}>🪑 Coworking Occupancy</span>
+            <span style={{ color:pctColor(cwOccPct), fontSize:'1.8rem', fontWeight:'700' }}>{cwOccPct}%</span>
+          </div>
+          <div style={barBg}><div style={barFill(cwOccPct, pctColor(cwOccPct))} /></div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.5rem', marginTop:'0.75rem', fontSize:'0.8rem' }}>
+            <span style={{ color:'#6b7280' }}>Occupied: <strong style={{ color:'#1f2937' }}>{seatsOccupied}</strong></span>
+            <span style={{ color:'#6b7280' }}>Available: <strong style={{ color:'#059669' }}>{TOTAL_SEATS-seatsOccupied}</strong></span>
+            <span style={{ color:'#6b7280' }}>Capacity: <strong style={{ color:'#1f2937' }}>{TOTAL_SEATS} seats</strong></span>
+            <span style={{ color:'#6b7280' }}>Companies: <strong style={{ color:'#1f2937' }}>{cwStats.length}</strong></span>
+          </div>
+          {/* Seat map */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:'4px', marginTop:'1rem' }}>
+            {Array.from({length:TOTAL_SEATS},(_,i)=>(
+              <div key={i} style={{ aspectRatio:'1', borderRadius:'4px', background:i<seatsOccupied?'#2B4C7E':'#e5e7eb', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'9px', color:i<seatsOccupied?'#fff':'#9ca3af', fontWeight:'600' }}>{i+1}</div>
             ))}
-          </tbody>
-        </table>
-      </div>
-    )}
+          </div>
+          <div style={{ display:'flex', gap:'1rem', marginTop:'0.5rem', fontSize:'0.72rem', color:'#6b7280' }}>
+            <span><span style={{ display:'inline-block', width:'10px', height:'10px', background:'#2B4C7E', borderRadius:'2px', marginRight:'3px' }} />Occupied</span>
+            <span><span style={{ display:'inline-block', width:'10px', height:'10px', background:'#e5e7eb', borderRadius:'2px', marginRight:'3px' }} />Available</span>
+          </div>
+        </div>
 
-    {/* Hall breakdown from archives */}
-    {monthlyArchives.length > 0 && (
-      <div style={{ marginTop: '2rem' }}>
-        <h3 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1rem' }}>🏢 Hall Utilization (archived months)</h3>
-        {(() => {
-          const hallTotals = {};
-          monthlyArchives.forEach(a => {
-            Object.entries(a.bookings?.byHall || {}).forEach(([hall, data]) => {
-              if (!hallTotals[hall]) hallTotals[hall] = { bookings: 0, hours: 0 };
-              hallTotals[hall].bookings += data.bookings || 0;
-              hallTotals[hall].hours += data.hours || 0;
-            });
-          });
-          return (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-              {Object.entries(hallTotals).map(([hall, data]) => (
-                <div key={hall} style={{ background: '#f9fafb', borderRadius: '10px', padding: '1rem', border: '1px solid #e5e7eb' }}>
-                  <p style={{ color: '#2B4C7E', fontWeight: '600', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>{hall}</p>
-                  <p style={{ color: '#1f2937', fontSize: '1.4rem', fontWeight: '700', margin: 0 }}>{data.bookings}</p>
-                  <p style={{ color: '#6b7280', fontSize: '0.8rem', margin: '0.25rem 0 0' }}>bookings | {Math.round(data.hours)}h utilized</p>
-                </div>
-              ))}
+        {/* Hall utilization */}
+        <div style={statCard}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem' }}>
+            <span style={{ color:'#1f2937', fontWeight:'600' }}>🏢 Hall Booking Approval</span>
+            <span style={{ color:pctColor(hallApprovalPct), fontSize:'1.8rem', fontWeight:'700' }}>{hallApprovalPct}%</span>
+          </div>
+          <div style={barBg}><div style={barFill(hallApprovalPct, pctColor(hallApprovalPct))} /></div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.5rem', marginTop:'0.75rem', fontSize:'0.8rem' }}>
+            <span style={{ color:'#6b7280' }}>Approved: <strong style={{ color:'#059669' }}>{approvedBookings.length}</strong></span>
+            <span style={{ color:'#6b7280' }}>Pending: <strong style={{ color:'#F5A623' }}>{pendingBookings.length}</strong></span>
+            <span style={{ color:'#6b7280' }}>Rejected: <strong style={{ color:'#dc2626' }}>{rejectedBookings.length}</strong></span>
+            <span style={{ color:'#6b7280' }}>Total: <strong style={{ color:'#1f2937' }}>{bookings.length}</strong></span>
+          </div>
+          <div style={{ marginTop:'1rem' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.8rem', marginBottom:'4px' }}>
+              <span style={{ color:'#6b7280' }}>Coworking approval</span>
+              <span style={{ color:pctColor(cwApprovalPct), fontWeight:'600' }}>{cwApprovalPct}%</span>
             </div>
-          );
-        })()}
-      </div>
-    )}
+            <div style={barBg}><div style={barFill(cwApprovalPct, '#7c3aed')} /></div>
+          </div>
+          <div style={{ marginTop:'1rem', padding:'0.75rem', background:'#f9fafb', borderRadius:'6px', fontSize:'0.8rem' }}>
+            <div style={{ color:'#6b7280', marginBottom:'4px' }}>Total hours booked (approved):</div>
+            <div style={{ color:'#2B4C7E', fontSize:'1.4rem', fontWeight:'700' }}>{Math.round(totalHoursBooked)}h</div>
+          </div>
+        </div>
 
-    {/* Coworking company breakdown from archives */}
-    {monthlyArchives.length > 0 && (
-      <div style={{ marginTop: '2rem' }}>
-        <h3 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '1rem' }}>🪑 Coworking by Company (archived months)</h3>
-        {(() => {
-          const compTotals = {};
-          monthlyArchives.forEach(a => {
-            Object.entries(a.coworking?.byCompany || {}).forEach(([comp, seats]) => {
-              compTotals[comp] = (compTotals[comp] || 0) + seats;
-            });
-          });
-          return (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-              {Object.entries(compTotals).sort((a,b)=>b[1]-a[1]).map(([comp, seats]) => (
-                <div key={comp} style={{ background: '#f9fafb', borderRadius: '10px', padding: '1rem', border: '1px solid #e5e7eb' }}>
-                  <p style={{ color: '#2B4C7E', fontWeight: '600', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>{comp}</p>
-                  <p style={{ color: '#1f2937', fontSize: '1.4rem', fontWeight: '700', margin: 0 }}>{seats}</p>
-                  <p style={{ color: '#6b7280', fontSize: '0.8rem', margin: '0.25rem 0 0' }}>total seats (all time)</p>
-                </div>
-              ))}
+        {/* Feedback rating */}
+        {feedbacks.length > 0 && (
+          <div style={statCard}>
+            <div style={{ color:'#1f2937', fontWeight:'600', marginBottom:'0.75rem' }}>⭐ Feedback Ratings</div>
+            <div style={{ display:'flex', alignItems:'center', gap:'1rem', marginBottom:'1rem' }}>
+              <div style={{ color:'#F5A623', fontSize:'2.5rem', fontWeight:'700' }}>{avgRating}</div>
+              <div style={{ color:'#6b7280', fontSize:'0.8rem' }}>avg rating<br/>from {feedbacks.length} responses</div>
             </div>
-          );
-        })()}
+            {[5,4,3,2,1].map(r=>{
+              const count=feedbacks.filter(f=>parseInt(f.rating?.match(/\d/)?.[0]||0)===r).length;
+              const pct=Math.round((count/feedbacks.length)*100);
+              return (
+                <div key={r} style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'6px', fontSize:'0.8rem' }}>
+                  <span style={{ minWidth:'18px', color:'#6b7280' }}>{r}⭐</span>
+                  <div style={{ ...barBg, flex:1, margin:0 }}><div style={barFill(pct,'#F5A623')} /></div>
+                  <span style={{ minWidth:'30px', color:'#6b7280', textAlign:'right' }}>{count}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
-    )}
-  </div>
-)}
+
+      {/* ── PER-HALL BREAKDOWN ── */}
+      {hallStats.length > 0 && (
+        <div style={{ marginBottom:'2rem' }}>
+          <h3 style={secHead}>🏢 Hall-wise Utilization</h3>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:'1rem' }}>
+            {hallStats.map(h=>{
+              const pct=Math.round((h.hours/maxHours)*100);
+              const col=pctColor(pct);
+              return (
+                <div key={h.name} style={statCard}>
+                  <div style={{ color:'#2B4C7E', fontWeight:'600', marginBottom:'0.5rem' }}>{h.name}</div>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.8rem', color:'#6b7280', marginBottom:'4px' }}>
+                    <span>{h.count} bookings</span><span>{Math.round(h.hours)}h used</span>
+                  </div>
+                  <div style={barBg}><div style={barFill(pct,col)} /></div>
+                  <div style={{ fontSize:'0.72rem', color:'#9ca3af', marginTop:'4px' }}>{pct}% of busiest hall</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── COWORKING BY COMPANY ── */}
+      {cwStats.length > 0 && (
+        <div style={{ marginBottom:'2rem' }}>
+          <h3 style={secHead}>🪑 Coworking by Company</h3>
+          <div style={{ overflowX:'auto', borderRadius:'10px', border:'1px solid #e5e7eb' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.85rem' }}>
+              <thead>
+                <tr style={{ background:'#2B4C7E', color:'#fff' }}>
+                  {['Company','Seats Occupied','Bookings','% of Capacity'].map(h=>(
+                    <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:'600' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {cwStats.map((c,i)=>{
+                  const pct=Math.round((c.seats/TOTAL_SEATS)*100);
+                  return (
+                    <tr key={c.name} style={{ borderBottom:'1px solid #e5e7eb', background:i%2===0?'#fff':'#f9fafb' }}>
+                      <td style={{ padding:'0.75rem 1rem', color:'#1f2937', fontWeight:'500' }}>{c.name}</td>
+                      <td style={{ padding:'0.75rem 1rem', color:'#2B4C7E', fontWeight:'600' }}>{c.seats}</td>
+                      <td style={{ padding:'0.75rem 1rem', color:'#6b7280' }}>{c.bookings}</td>
+                      <td style={{ padding:'0.75rem 1rem', minWidth:'140px' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                          <div style={{ ...barBg, flex:1, margin:0 }}><div style={barFill(pct,'#7c3aed')} /></div>
+                          <span style={{ color:'#7c3aed', fontWeight:'600', minWidth:'35px' }}>{pct}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── MONTHLY BREAKDOWN ── */}
+      {months.length > 0 && (
+        <div style={{ marginBottom:'2rem' }}>
+          <h3 style={secHead}>📅 Monthly Breakdown</h3>
+          <div style={{ overflowX:'auto', borderRadius:'10px', border:'1px solid #e5e7eb' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.85rem' }}>
+              <thead>
+                <tr style={{ background:'#2B4C7E', color:'#fff' }}>
+                  {['Month','Visitors','Bookings','Approved','Rejected','Coworking','CW Approved'].map(h=>(
+                    <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:'600', whiteSpace:'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {months.map((m,i)=>(
+                  <tr key={m.ym} style={{ borderBottom:'1px solid #e5e7eb', background:i%2===0?'#fff':'#f9fafb' }}>
+                    <td style={{ padding:'0.75rem 1rem', color:'#2B4C7E', fontWeight:'600' }}>{m.ym}</td>
+                    <td style={{ padding:'0.75rem 1rem', color:'#1f2937', fontWeight:'600' }}>{m.v}</td>
+                    <td style={{ padding:'0.75rem 1rem', color:'#1f2937' }}>{m.b}</td>
+                    <td style={{ padding:'0.75rem 1rem', color:'#059669', fontWeight:'600' }}>{m.ba}</td>
+                    <td style={{ padding:'0.75rem 1rem', color:'#dc2626', fontWeight:'600' }}>{m.b-m.ba}</td>
+                    <td style={{ padding:'0.75rem 1rem', color:'#1f2937' }}>{m.c}</td>
+                    <td style={{ padding:'0.75rem 1rem', color:'#7c3aed', fontWeight:'600' }}>{m.ca}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── ARCHIVE HISTORY ── */}
+      <div style={{ marginBottom:'2rem' }}>
+        <h3 style={secHead}>📦 Archive History ({monthlyArchives.length} months)</h3>
+        {monthlyArchives.length === 0 ? (
+          <p style={{ color:'#6b7280', fontStyle:'italic', fontSize:'0.9rem' }}>No archived months yet. Use the Archive & Clear tool above to save monthly summaries.</p>
+        ) : (
+          <div style={{ overflowX:'auto', borderRadius:'10px', border:'1px solid #e5e7eb' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.85rem' }}>
+              <thead>
+                <tr style={{ background:'#2B4C7E', color:'#fff' }}>
+                  {['Month','Visitors','Bookings','Approved','Coworking','CW Approved','Archived On'].map(h=>(
+                    <th key={h} style={{ padding:'0.75rem 1rem', textAlign:'left', fontWeight:'600', whiteSpace:'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...monthlyArchives].sort((a,b)=>b.month.localeCompare(a.month)).map((a,i)=>(
+                  <tr key={a.month} style={{ borderBottom:'1px solid #e5e7eb', background:i%2===0?'#fff':'#f9fafb' }}>
+                    <td style={{ padding:'0.75rem 1rem', color:'#2B4C7E', fontWeight:'600' }}>{a.label}</td>
+                    <td style={{ padding:'0.75rem 1rem', fontWeight:'600' }}>{a.visitors?.total||0}</td>
+                    <td style={{ padding:'0.75rem 1rem' }}>{a.bookings?.total||0}</td>
+                    <td style={{ padding:'0.75rem 1rem', color:'#059669', fontWeight:'600' }}>{a.bookings?.approved||0}</td>
+                    <td style={{ padding:'0.75rem 1rem' }}>{a.coworking?.total||0}</td>
+                    <td style={{ padding:'0.75rem 1rem', color:'#7c3aed', fontWeight:'600' }}>{a.coworking?.approved||0}</td>
+                    <td style={{ padding:'0.75rem 1rem', color:'#6b7280', fontSize:'0.78rem' }}>{a.archivedAt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+})()}
 
 {tab === 'feedback' && (
   <div style={card}>
