@@ -311,6 +311,38 @@ export const deleteCoworkingMember = async (firebaseId) => {
   }
 };
 
+
+// ==================== MONTHLY ARCHIVES ====================
+
+export const archiveMonthData = async (month, summaryData) => {
+  try {
+    const { doc, setDoc } = await import('firebase/firestore');
+    const docRef = doc(db, 'monthlyArchive', month);
+    await setDoc(docRef, { ...summaryData, createdAt: new Date().toISOString() }, { merge: true });
+    return summaryData;
+  } catch (error) {
+    console.error('Error archiving month data:', error);
+    throw error;
+  }
+};
+
+export const getMonthlyArchives = async () => {
+  try {
+    const querySnapshot = await getDocs(collection(db, 'monthlyArchive'));
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error getting monthly archives:', error);
+    return [];
+  }
+};
+
+export const deleteMonthRecords = async (month) => {
+  console.log('Records deleted via individual delete calls for month:', month);
+};
+
 // ==================== REAL-TIME LISTENERS ====================
 
 export const listenToVisitors = (callback) => {
