@@ -42,7 +42,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     hallId: '', hallName: '', organizerName: '', email: '', 
     phone: '', countryCode: '+91', organization: '', purpose: '', 
     date: '', start: '', end: '', attendees: '', req: '',
-    gstin: '', smartCard: ''
+    address: '', gstin: '', smartCard: ''
   });
   const [cForm, setCForm] = useState({ 
     name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '',
@@ -362,7 +362,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       const newBooking = await addBooking(b);
       setBookings([...bookings, newBooking]);
       
-      setBForm({ hallId: '', hallName: '', organizerName: '', email: '', phone: '', countryCode: '+91', organization: '', purpose: '', date: '', start: '', end: '', attendees: '', req: '' }); 
+      setBForm({ hallId: '', hallName: '', organizerName: '', email: '', phone: '', countryCode: '+91', organization: '', purpose: '', date: '', start: '', end: '', attendees: '', req: '', address: '', gstin: '', smartCard: '' });
       alert('Booking submitted! Booking ID: ' + b.id); 
       setTab('home');
     } catch (error) {
@@ -1220,6 +1220,18 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
           <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Attendees *</label>
           <input type="number" value={bForm.attendees} onChange={(e) => setBForm({ ...bForm, attendees: e.target.value })} required style={inp} />
         </div>
+      </div>
+           <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Address *</label>
+        <textarea value={bForm.address} onChange={(e) => setBForm({ ...bForm, address: e.target.value })} required style={{ ...inp, minHeight: '80px' }} placeholder="Complete billing address" />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>GSTIN <span style={{ color: '#6b7280', fontWeight: '400' }}>(Optional)</span></label>
+        <input type="text" value={bForm.gstin} onChange={(e) => setBForm({ ...bForm, gstin: e.target.value.toUpperCase() })} maxLength="15" style={inp} placeholder="e.g. 33AAAAA0000A1Z5" />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Smart Card Number <span style={{ color: '#6b7280', fontWeight: '400' }}>(Optional)</span></label>
+        <input type="text" value={bForm.smartCard} onChange={(e) => setBForm({ ...bForm, smartCard: e.target.value })} style={inp} placeholder="Smart Card Number" />
       </div>
       <div>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Special Requirements</label>
