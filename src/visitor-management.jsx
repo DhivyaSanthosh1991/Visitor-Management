@@ -1299,6 +1299,17 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <button type="submit" style={{ ...btn, width: '100%' }}>Submit Request</button>
       </div>
     </form>
+    <div style={{ marginTop: '2rem', padding: '1.5rem', background: '#EFF6FF', border: '2px solid #2B4C7E', borderRadius: '10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h3 style={{ color: '#2B4C7E', fontWeight: '700', margin: '0 0 0.25rem' }}>👥 Team Member Registration</h3>
+          <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>Already have a Booking ID? Register your team members here.</p>
+        </div>
+        <button onClick={() => setTab('cowork-member')} style={{ ...btn, background: '#F5A623', whiteSpace: 'nowrap' }}>
+          + Register Members
+        </button>
+      </div>
+    </div>
   </div>
 )}
 
