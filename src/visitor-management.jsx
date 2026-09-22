@@ -79,12 +79,21 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   const [feedbackFilter, setFeedbackFilter] = useState('all');
 
   // Generate auto ID
-  const generateId = (prefix, existingItems) => {
+    const generateId = (prefix, existingItems) => {
     const today = new Date();
     const dateStr = today.toLocaleDateString('en-GB').split('/').join('');
     const todayItems = existingItems.filter(item => item.id?.startsWith(`${prefix}-${dateStr}`));
-    const seq = (todayItems.length + 1).toString().padStart(3, '0');
-    return `${prefix}-${dateStr}-${seq}`;
+    
+    // Find the highest existing sequence number for today to avoid duplicates
+    let maxSeq = 0;
+    todayItems.forEach(item => {
+      const parts = (item.id || '').split('-');
+      const seq = parseInt(parts[parts.length - 1] || '0');
+      if (seq > maxSeq) maxSeq = seq;
+    });
+    
+    const nextSeq = (maxSeq + 1).toString().padStart(3, '0');
+    return `${prefix}-${dateStr}-${nextSeq}`;
   };
   
   // Get today's date
