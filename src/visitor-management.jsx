@@ -5,6 +5,7 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebas
 import { auth } from './firebase';
 import CoworkPortal from './CoworkPortal';
 import CoworkMembersAdmin from './CoworkMembersAdmin';
+import { mailEnabled, sendPaymentConfirmation } from './mailer';
 import {
   daysUntil, formatDate, needsReminder, applyRenewal, statusMeta, isActive, isPaid, needsApproval,
   companyKey, monthKeyOf, monthLabel, latestActivity, hallDateInfo
@@ -766,6 +767,20 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   };
 
   // Verify a submitted payment (or record an offline one) for the first cycle or a pending renewal
+  // Sends the payment confirmation automatically (Apps Script mailer). Falls back to the manual email dialog.
+  const notifyPayment = async (rec, kind, fallback) => {
+    if (!mailEnabled) { fallback(); return; }
+    const r = await sendPaymentConfirmation(rec, kind);
+    if (r.ok) {
+      alert(r.duplicate
+        ? `Payment verified. A confirmation email was already sent earlier to ${rec.email}.`
+        : `Payment verified. Confirmation email sent automatically to ${rec.email}.`);
+    } else {
+      alert(`Payment verified, but the automatic email failed (${r.error}). The email dialog will open so you can send it manually.`);
+      fallback();
+    }
+  };
+
   const verifyPayment = async (id, offline = null) => {
     try {
       const c = coworking.find(x => x.id === id);
@@ -785,12 +800,13 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         setCoworkingMembers(prev => prev.map(m => c.renewal.removeIds.includes(m.firebaseId) ? { ...m, ...flag } : m));
         await saveCowork(updated);
         const added = c.renewal.addCount;
-        sendEmail(c.email, 'Coworking Renewal Confirmed - StartupTN',
-          `Dear ${c.name},\n\nYour payment is verified and your coworking space is renewed.\n\nCoworking ID: ${c.id}\nNew period: ${formatDate(c.renewal.startDate)} to ${formatDate(c.renewal.endDate)}\nTotal seats: ${c.renewal.newSeats}\n${added > 0 ? `\nPlease add the details of your ${added} new member(s) here:\n${portalLink(c.id)}\n` : ''}\nBest regards,\nStartupTN Team`);
+        notifyPayment(updated, 'renewal', () => sendEmail(c.email, 'Coworking Renewal Confirmed - StartupTN',
+          `Dear ${c.name},\n\nYour payment is verified and your coworking space is renewed.\n\nCoworking ID: ${c.id}\nNew period: ${formatDate(c.renewal.startDate)} to ${formatDate(c.renewal.endDate)}\nTotal seats: ${c.renewal.newSeats}\n${added > 0 ? `\nPlease add the details of your ${added} new member(s) here:\n${portalLink(c.id)}\n` : ''}\nBest regards,\nStartupTN Team`));
       } else {
-        await saveCowork({ ...c, status: 'approved', paymentStatus: 'paid', payment, reviewed: now });
-        sendEmail(c.email, 'Coworking Payment Verified - StartupTN',
-          `Dear ${c.name},\n\nYour payment is verified and your seats are now ALLOTTED.\n\nCoworking ID: ${c.id}\nPeriod: ${formatDate(c.startDate)} to ${formatDate(c.endDate)}\nSeats allotted: ${c.seats}\n\nYou can now register your team members here:\n${portalLink(c.id)}\n\nBest regards,\nStartupTN Team`);
+        const paidRec = { ...c, status: 'approved', paymentStatus: 'paid', payment, reviewed: now };
+        await saveCowork(paidRec);
+        notifyPayment(paidRec, 'first', () => sendEmail(c.email, 'Coworking Payment Verified - StartupTN',
+          `Dear ${c.name},\n\nYour payment is verified and your seats are now ALLOTTED.\n\nCoworking ID: ${c.id}\nPeriod: ${formatDate(c.startDate)} to ${formatDate(c.endDate)}\nSeats allotted: ${c.seats}\n\nYou can now register your team members here:\n${portalLink(c.id)}\n\nBest regards,\nStartupTN Team`));
       }
     } catch (error) {
       console.error('Error verifying payment:', error);
