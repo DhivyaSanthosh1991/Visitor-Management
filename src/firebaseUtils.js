@@ -302,6 +302,18 @@ export const getCoworkingMembers = async () => {
   }
 };
 
+export const updateCoworkingMember = async (firebaseId, memberData) => {
+  try {
+    await updateDoc(doc(db, 'coworkingMembers', firebaseId), {
+      ...memberData,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error updating coworking member:', error);
+    throw error;
+  }
+};
+
 export const deleteCoworkingMember = async (firebaseId) => {
   try {
     await deleteDoc(doc(db, 'coworkingMembers', firebaseId));
@@ -378,7 +390,7 @@ export const listenToBookings = (callback) => {
   });
 };
 
-export const listenToCoworking = (callback) => {
+export const listenToCoworking = (callback, onError) => {
   const q = collection(db, COLLECTIONS.coworking);
   return onSnapshot(q, (snapshot) => {
     const coworking = snapshot.docs.map(doc => ({
@@ -386,7 +398,7 @@ export const listenToCoworking = (callback) => {
       ...doc.data()
     }));
     callback(coworking);
-  });
+  }, (err) => { console.error('listenToCoworking:', err); onError && onError(err); });
 };
 
 // ==================== QUERY HELPERS ====================
@@ -463,4 +475,10 @@ export const deleteFeedback = async (firebaseId) => {
     console.error('Error deleting feedback:', error);
     throw error;
   }
+};
+
+export const listenToFeedback = (callback, onError) => {
+  return onSnapshot(collection(db, 'feedback'), (snapshot) => {
+    callback(snapshot.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() })));
+  }, (err) => { console.error('listenToFeedback:', err); onError && onError(err); });
 };

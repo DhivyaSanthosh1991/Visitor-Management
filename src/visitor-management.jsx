@@ -1,17 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Users, Calendar, Download, Edit2, Trash2, CheckCircle, XCircle, Building, LogOut, MapPin, Mail, Phone, Briefcase, Plus, Minus, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
+import CoworkPortal from './CoworkPortal';
+import CoworkMembersAdmin from './CoworkMembersAdmin';
+import {
+  daysUntil, formatDate, needsReminder, applyRenewal, statusMeta, isActive, isPaid, needsApproval,
+  companyKey, monthKeyOf, monthLabel, latestActivity, hallDateInfo
+} from './coworkUtils';
 import {
   getVisitors, addVisitor, updateVisitor, deleteVisitor,
   getEvents, addEvent, updateEvent, deleteEvent,
   getHalls, addHall, updateHall, deleteHall,
   getBookings, addBooking, updateBooking as updateBookingFirebase, deleteBooking,
   getCoworking, addCoworking, updateCoworking as updateCoworkingFirebase, deleteCoworking,
-  addCoworkingMember, getCoworkingMembers, deleteCoworkingMember,
+  getCoworkingMembers, deleteCoworkingMember, updateCoworkingMember,
   archiveMonthData, getMonthlyArchives, deleteMonthRecords,
-  addFeedback, getFeedback, deleteFeedback
+  addFeedback, getFeedback, deleteFeedback, listenToCoworking, listenToFeedback
 } from './firebaseUtils';
 
 const VisitorManagementSystem = () => {
@@ -27,6 +33,17 @@ const VisitorManagementSystem = () => {
   const [coworking, setCoworking] = useState([]);
   // Search/Filter states
 const [visitorSearch, setVisitorSearch] = useState('');
+  const [accHover, setAccHover] = useState(null);
+  // Blocks double-clicks: a second click while the first save is still running is ignored.
+  const submitLock = useRef(false);
+  const once = (fn) => async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (submitLock.current) return;
+    submitLock.current = true;
+    try { await fn(e); } finally { submitLock.current = false; }
+  };
+  const norm = (x) => String(x ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const todayIdStamp = () => new Date().toLocaleDateString('en-GB').split('/').join('');
 const [visitorDateFrom, setVisitorDateFrom] = useState('');
 const [visitorDateTo, setVisitorDateTo] = useState('');
 const [selectedVisitors, setSelectedVisitors] = useState([]);
@@ -46,8 +63,8 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   });
   const [cForm, setCForm] = useState({ 
     name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '',
-    company: '', designation: '', gender: '', seats: '', duration: '', startDate: '', purpose: '',
-    gstin: '', smartCard: ''
+    company: '', designation: '', gender: '', seats: '', startDate: '', endDate: '', purpose: '',
+    address: '', gstin: '', smartCard: ''
   });
   const [regForm, setRegForm] = useState({ 
     eventId: '', name: '', email: '', phone: '', countryCode: '+91', 
@@ -61,13 +78,19 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   const [editC, setEditC] = useState(null);
   const [expandedCompany, setExpandedCompany] = useState(null);
   const [coworkingMembers, setCoworkingMembers] = useState([]);
-  const [memberForm, setMemberForm] = useState({
-    bookingId: '', name: '', designation: '',
-    contactNumber: '', alternateContact: '', email: '',
-    gender: '', aadharNo: '', dob: '', maritalStatus: '',
-    bloodGroup: '', fatherName: '', permanentAddress: '',
-    communicationAddress: '', officeAddress: ''
-  });
+  const [portalId, setPortalId] = useState('');
+  const [hallOpen, setHallOpen] = useState({}); // hall key -> expanded? (all start collapsed)
+  const [groupOpen, setGroupOpen] = useState({}); // company key -> true/false (explicit open/close by admin)
+  const [quickFilter, setQuickFilter] = useState(''); // '', new, verify, awaiting, renewal, active, exited, rejected
+
+  // Admin "unread" markers (kept in this browser). Opening a tab marks its items as read.
+  const readSeen = (key, fallback) => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } };
+  const [seenCow, setSeenCow] = useState(() => readSeen('stn_seen_coworking', new Date().toISOString())); // first run: don't flag old history
+  const [seenFb, setSeenFb] = useState(() => readSeen('stn_seen_feedback', ''));
+  const [tagCow, setTagCow] = useState(seenCow);   // "NEW" tags stay visible while you are on the tab
+  const [tagFb, setTagFb] = useState(seenFb);
+  const badgeStyle = { position: 'absolute', top: '6px', right: '6px', background: '#dc2626', color: '#fff', borderRadius: '9px', minWidth: '18px', height: '18px', padding: '0 4px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+  const [exitModal, setExitModal] = useState(null); // { c, date, note } - admin 'Mark Exited' dialog
   const [monthlyArchives, setMonthlyArchives] = useState([]);
   const [archiveMonth, setArchiveMonth] = useState('');
   const [archiving, setArchiving] = useState(false);
@@ -77,6 +100,8 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     name: '', email: '', phone: '', category: '', rating: '', message: ''
   });
   const [feedbackFilter, setFeedbackFilter] = useState('all');
+  const unreadCow = coworking.filter(c => latestActivity(c) > seenCow).length;
+  const unreadFb = feedbacks.filter(f => (f.createdAt || '') > seenFb).length;
 
   // Generate auto ID
     const generateId = (prefix, existingItems) => {
@@ -132,12 +157,12 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   // ✅ FIX: Filter functions MOVED OUTSIDE exportToExcel
   const getFilteredVisitors = () => {
     return visitors.filter(v => {
-      const matchesSearch =
-        v.id?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-        v.name?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-        v.company?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-        v.email?.toLowerCase().includes(visitorSearch.toLowerCase()) ||
-        v.time?.toLowerCase().includes(visitorSearch.toLowerCase());
+      const accText = (Array.isArray(v.accompanying) ? v.accompanying : [])
+        .map(a => `${a.name || ''} ${a.company || ''} ${a.countryCode || ''}${a.phone || ''}`).join(' ');
+      const haystack = [v.id, v.prefix, v.name, v.email, v.phone, v.fullPhone, v.company, v.purpose, v.toMeet, v.time, accText]
+        .map(x => String(x ?? '').toLowerCase()).join(' | ');
+      const terms = visitorSearch.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      const matchesSearch = terms.every(t => haystack.includes(t));
 
       // Date range filter using the time field (format: DD/MM/YYYY, HH:MM:SS)
       let matchesDate = true;
@@ -169,6 +194,24 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     });
   };
 
+  // What does the admin need to do with this coworking record?
+  const cowFlags = (c) => {
+    const payState = c.renewal ? c.renewal.paymentStatus : c.paymentStatus;
+    return {
+      isNew: latestActivity(c) > tagCow,
+      approval: needsApproval(c),
+      verify: ((c.status === 'pending' && !needsApproval(c)) || !!c.renewal) && payState === 'submitted',
+      awaiting: (c.status === 'pending' && !needsApproval(c) && !isPaid(c) && c.paymentStatus !== 'submitted') || (!!c.renewal && c.renewal.paymentStatus === 'unpaid'),
+      renewal: !!c.renewal || needsReminder(c)
+    };
+  };
+  const matchesQuick = (c) => {
+    if (!quickFilter) return true;
+    if (quickFilter === 'active') return c.status === 'approved';
+    if (quickFilter === 'exited' || quickFilter === 'rejected') return c.status === quickFilter;
+    return !!cowFlags(c)[quickFilter === 'new' ? 'isNew' : quickFilter];
+  };
+
   const getFilteredCoworking = () => {
     return coworking.filter(c => {
       const matchesSearch = c.id?.toLowerCase().includes(coworkingSearch.toLowerCase()) ||
@@ -178,11 +221,46 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       
       const matchesStatus = coworkingStatusFilter === 'all' || c.status === coworkingStatusFilter;
       
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesStatus && matchesQuick(c);
     });
   };
 
- // Load data from Firebase
+  // Admin: live updates (no refresh needed) for coworking + feedback
+  useEffect(() => {
+    if (!isAdmin) return;
+    const u1 = listenToCoworking(setCoworking);
+    const u2 = listenToFeedback(setFeedbacks);
+    return () => { u1 && u1(); u2 && u2(); };
+  }, [isAdmin]);
+
+  // A new filter / search starts with the default open-close state again
+  useEffect(() => { setGroupOpen({}); }, [quickFilter, coworkingSearch]);
+  useEffect(() => { setHallOpen({}); }, [bookingSearch, bookingStatusFilter]);
+
+  // Entering a tab: remember what was unread (for NEW tags)
+  useEffect(() => {
+    if (tab === 'admin-c') setTagCow(seenCow);
+    if (tab === 'admin-fb') setTagFb(seenFb);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  // While a tab is open, everything in it counts as read (badge clears)
+  useEffect(() => {
+    if (!isAdmin) return;
+    const now = new Date().toISOString();
+    try {
+      if (tab === 'admin-c') { setSeenCow(now); localStorage.setItem('stn_seen_coworking', now); }
+      if (tab === 'admin-fb') { setSeenFb(now); localStorage.setItem('stn_seen_feedback', now); }
+    } catch { /* storage unavailable: badge simply resets on reload */ }
+  }, [tab, coworking, feedbacks, isAdmin]);
+
+  // Reminder emails link to /?cowork=<ID>: open the coworking portal for that ID
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('cowork');
+    if (id) { setPortalId(id.trim().toUpperCase()); setTab('cowork-manage'); }
+  }, []);
+
+  // Load data from Firebase
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -244,7 +322,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     }
   };
   
- const submitV = async (e) => { 
+ const submitV = once(async (e) => { 
     e.preventDefault(); 
     if (!validatePhone(vForm.phone, vForm.countryCode)) {
       alert('Please enter a valid 10-digit mobile number');
@@ -252,8 +330,19 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     }
     
     try {
+      const fresh = editV ? visitors : await getVisitors();
+      if (!editV) {
+        const stamp = todayIdStamp();
+        const dup = fresh.find(x => (x.id || '').startsWith(`V-${stamp}`) &&
+          norm(x.name) === norm(vForm.name) && (x.fullPhone || x.phone) === (vForm.countryCode + vForm.phone) &&
+          norm(x.company) === norm(vForm.company) && norm(x.purpose) === norm(vForm.purpose) && norm(x.toMeet) === norm(vForm.toMeet));
+        if (dup) {
+          alert(`Already registered today with Visitor ID ${dup.id}.\n\nThe same details cannot be registered twice on one day. You can register again on another date.`);
+          return;
+        }
+      }
       const v = { 
-        id: editV?.id || generateId('V', visitors), 
+        id: editV?.id || generateId('V', fresh), 
         ...vForm, 
         fullPhone: vForm.countryCode + vForm.phone,
         time: editV?.time || new Date().toLocaleString() 
@@ -278,7 +367,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       console.error('Error saving visitor:', error);
       alert('Error saving visitor!');
     }
-  };
+});
   
  const submitE = async (e) => { 
     e.preventDefault(); 
@@ -343,7 +432,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     }
   };
   
-  const submitB = async (e) => { 
+  const submitB = once(async (e) => { 
     e.preventDefault(); 
     const bookingDate = new Date(bForm.date);
     const today = new Date();
@@ -360,8 +449,16 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     }
     
     try {
+      const freshB = await getBookings();
+      const dupB = freshB.find(x => x.status !== 'rejected' && x.hallId === bForm.hallId && x.date === bForm.date &&
+        x.start === bForm.start && x.end === bForm.end &&
+        (norm(x.email) === norm(bForm.email) || (x.fullPhone || x.phone) === (bForm.countryCode + bForm.phone)));
+      if (dupB) {
+        alert(`Already registered: this booking was already submitted with Booking ID ${dupB.id}.\n\nYou can book again for another date.`);
+        return;
+      }
       const b = { 
-        id: generateId('B', bookings), 
+        id: generateId('B', freshB), 
         ...bForm, 
         fullPhone: bForm.countryCode + bForm.phone,
         status: 'pending', 
@@ -378,9 +475,9 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       console.error('Error submitting booking:', error);
       alert('Error submitting booking!');
     }
-  };
+});
 
-  const submitC = async (e) => { 
+  const submitC = once(async (e) => { 
     e.preventDefault(); 
     const startDate = new Date(cForm.startDate);
     const today = new Date();
@@ -390,34 +487,68 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       alert('Start date cannot be in the past!');
       return;
     }
+
+    if (!cForm.endDate || new Date(cForm.endDate) < startDate) {
+      alert('End date must be on or after the start date!');
+      return;
+    }
     
     if (!validatePhone(cForm.phone, cForm.countryCode)) {
       alert('Please enter a valid 10-digit mobile number');
       return;
     }
     
+    // Same company already registered? Point them to their existing ID instead of creating a second one.
+    const existing = coworking.find(x => companyKey(x.company) === companyKey(cForm.company) && x.status !== 'rejected' && x.status !== 'exited');
+    if (existing) {
+      if (confirm(`"${existing.company}" is already registered with Coworking ID ${existing.id}.\n\nTo continue the service, renew with the same ID (no new registration needed).\n\nOK = open my existing ID\nCancel = register a new, separate entry anyway`)) {
+        setPortalId(existing.id);
+        setTab('cowork-manage');
+        return;
+      }
+    }
+
     try {
+      // The Coworking ID is permanent: it is used for payment, member registration and every renewal.
+      const freshC = await getCoworking();
+      const dupC = freshC.find(x => x.status !== 'rejected' && x.status !== 'exited' &&
+        companyKey(x.company) === companyKey(cForm.company) && norm(x.name) === norm(cForm.name) &&
+        x.startDate === cForm.startDate && x.endDate === cForm.endDate);
+      if (dupC) {
+        alert(`Already registered with Coworking ID ${dupC.id}.\n\nUse the same ID for payment, members and renewals.`);
+        setPortalId(dupC.id);
+        setTab('cowork-manage');
+        return;
+      }
       const c = { 
-        id: generateId('C', coworking), 
+        id: generateId('C', freshC), 
         ...cForm, 
         fullPhone: cForm.countryCode + cForm.phone,
-        status: 'pending', 
+        status: 'pending',
+        approvalStatus: 'pending',
+        paymentStatus: 'unpaid',
+        payment: null,
+        cycle: 1,
+        history: [],
+        renewal: null,
+        reminderSentFor: null,
         submitted: new Date().toLocaleString() 
       };
       
       const newCoworking = await addCoworking(c);
       setCoworking([...coworking, newCoworking]);
       
-      setCForm({ name: '', email: '', phone: '', countryCode: '+91', company: '', seats: '', duration: '', startDate: '', purpose: '' }); 
-      alert('Request submitted! Coworking ID: ' + c.id); 
-      setTab('home');
+      setCForm({ name: '', email: '', phone: '', countryCode: '+91', alternatePhone: '', company: '', designation: '', gender: '', seats: '', startDate: '', endDate: '', purpose: '', address: '', gstin: '', smartCard: '' }); 
+      alert('Registration received! Your permanent Coworking ID is ' + c.id + '\n\nKeep this ID safe: you need it for payment, member registration and renewals.\nNext step: StartupTN will review and approve your request. Once approved you can pay using this same ID.'); 
+      setPortalId(c.id);
+      setTab('cowork-manage');
     } catch (error) {
       console.error('Error submitting coworking:', error);
       alert('Error submitting coworking!');
     }
-  };
+});
   
- const submitReg = async (e) => { 
+ const submitReg = once(async (e) => { 
     e.preventDefault(); 
     if (!validatePhone(regForm.phone, regForm.countryCode)) {
       alert('Please enter a valid 10-digit mobile number');
@@ -435,6 +566,11 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       const event = events.find(ev => ev.id === regForm.eventId);
       if (!event) {
         alert('Event not found!');
+        return;
+      }
+      const dupR = (event.regs || []).find(x => (x.fullPhone || x.phone) === (regForm.countryCode + regForm.phone) || (regForm.email && norm(x.email) === norm(regForm.email)));
+      if (dupR) {
+        alert('Already registered for this event with these contact details.');
         return;
       }
 
@@ -458,27 +594,12 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       console.error('Error registering for event:', error);
       alert('Error registering for event!');
     }
-  };
+});
   
   const sendEmail = (to, subject, body) => {
     setEmailModal({ to, subject, body });
   };
   
-
-  const submitMember = async (e) => {
-    e.preventDefault();
-    if (!memberForm.bookingId.trim()) { alert('Please enter your Booking ID'); return; }
-    const booking = coworking.find(c => c.id === memberForm.bookingId.trim());
-    if (!booking) { alert('Booking ID not found. Please check and try again.'); return; }
-    if (booking.status !== 'approved') { alert('Your coworking booking is not yet approved. Please wait for approval.'); return; }
-    try {
-      const member = { ...memberForm, bookingId: memberForm.bookingId.trim(), company: booking.company, submittedAt: new Date().toLocaleString() };
-      const newMember = await addCoworkingMember(member);
-      setCoworkingMembers([...coworkingMembers, newMember]);
-      setMemberForm({ bookingId: '', name: '', designation: '', contactNumber: '', alternateContact: '', email: '', gender: '', aadharNo: '', dob: '', maritalStatus: '', bloodGroup: '', fatherName: '', permanentAddress: '', communicationAddress: '', officeAddress: '' });
-      alert('Member registered successfully!'); setTab('home');
-    } catch (error) { console.error('Error:', error); alert('Error registering member!'); }
-  };
 
   const parseVisitorId = (id) => {
     try {
@@ -613,45 +734,243 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     }
   };
   
+  // Persist a coworking record and refresh local state
+  const saveCowork = async (updated) => {
+    await updateCoworkingFirebase(updated.firebaseId, updated);
+    setCoworking(prev => prev.map(c => c.firebaseId === updated.firebaseId ? updated : c));
+  };
+
+  const portalLink = (id) => `${window.location.origin}/?cowork=${encodeURIComponent(id)}`;
+
+  // Reject a registration request
   const updateCowork = async (id, status, msg = '') => { 
     try {
       const request = coworking.find(c => c.id === id);
-      if (!request) {
-        alert('Coworking request not found!');
-        return;
-      }
-
-      if (!request.firebaseId) {
-        alert('Coworking data is incomplete. Please refresh the page.');
-        return;
-      }
-      
-      const updatedCoworking = {
-        ...request,
-        status,
-        msg,
-        reviewed: new Date().toLocaleString()
-      };
-      
-      await updateCoworkingFirebase(request.firebaseId, updatedCoworking);
-      setCoworking(coworking.map(c => c.firebaseId === request.firebaseId ? updatedCoworking : c));
-      
-      if (status !== 'pending') {
-        const subject = status === 'approved' 
-          ? `Coworking Space Approved - StartupTN` 
-          : `Coworking Space Request Update - StartupTN`;
-        
-        const body = status === 'approved'
-          ? `Dear ${request.name},\n\nYour coworking space request has been APPROVED!\n\nCoworking ID: ${request.id}\n\nDetails:\n- Seats: ${request.seats}\n- Duration: ${request.duration}\n- Start Date: ${request.startDate}\n- Company: ${request.company}\n\n${msg ? `Admin Message: ${msg}\n\n` : ''}We look forward to welcoming you to StartupTN!\n\nBest regards,\nStartupTN Team`
-          : `Dear ${request.name},\n\nYour coworking space request has been reviewed.\n\nCoworking ID: ${request.id}\n\nDetails:\n- Status: ${status.toUpperCase()}\n- Seats Requested: ${request.seats}\n- Duration: ${request.duration}\n\n${msg ? `Reason: ${msg}\n\n` : ''}Please contact us if you have any questions.\n\nBest regards,\nStartupTN Team`;
-        
-        sendEmail(request.email, subject, body);
-      }
+      if (!request || !request.firebaseId) { alert('Coworking request not found. Please refresh the page.'); return; }
+      await saveCowork({ ...request, status, msg, reviewed: new Date().toLocaleString() });
+      sendEmail(request.email, 'Coworking Space Request Update - StartupTN',
+        `Dear ${request.name},\n\nYour coworking space request has been reviewed.\n\nCoworking ID: ${request.id}\nStatus: ${status.toUpperCase()}\n\n${msg ? `Reason: ${msg}\n\n` : ''}Please contact us if you have any questions.\n\nBest regards,\nStartupTN Team`);
     } catch (error) {
       console.error('Error updating coworking:', error);
       alert('Error updating coworking!');
     }
   };
+
+  // Step 1 of the flow: approve a new request. Only then can the client pay with their Coworking ID.
+  const approveCowork = async (c, msg = '') => {
+    try {
+      await saveCowork({ ...c, approvalStatus: 'approved', approvedOn: new Date().toLocaleString(), approvalMsg: msg });
+      sendEmail(c.email, 'Coworking Space Request Approved - Next: Payment - StartupTN',
+        `Dear ${c.name},\n\nYour coworking space request has been APPROVED.\n\nCoworking ID: ${c.id}\nPeriod: ${formatDate(c.startDate)} to ${formatDate(c.endDate)}\nSeats requested: ${c.seats}\n\n${msg ? `Note: ${msg}\n\n` : ''}Next step - please complete the payment using your Coworking ID here:\n${portalLink(c.id)}\n\nYour seats are allotted once the payment is verified, after which you can register your team members.\n\nBest regards,\nStartupTN Team`);
+    } catch (error) { console.error(error); alert('Error approving request!'); }
+  };
+
+  // Verify a submitted payment (or record an offline one) for the first cycle or a pending renewal
+  const verifyPayment = async (id, offline = null) => {
+    try {
+      const c = coworking.find(x => x.id === id);
+      if (!c) return;
+      const now = new Date().toLocaleString();
+      const isRenewal = !!c.renewal;
+      const payment = offline
+        ? { ...offline, submittedOn: new Date().toISOString(), verifiedOn: now }
+        : { ...(isRenewal ? c.renewal.payment : c.payment), verifiedOn: now };
+
+      if (isRenewal) {
+        const updated = applyRenewal({ ...c, renewal: { ...c.renewal, payment } }, now);
+        // Members ticked as leaving are flagged removed (kept for history)
+        const leaving = coworkingMembers.filter(m => c.renewal.removeIds.includes(m.firebaseId));
+        const flag = { removed: true, removedOn: now, removedReason: 'renewal' };
+        await Promise.all(leaving.map(m => updateCoworkingMember(m.firebaseId, flag)));
+        setCoworkingMembers(prev => prev.map(m => c.renewal.removeIds.includes(m.firebaseId) ? { ...m, ...flag } : m));
+        await saveCowork(updated);
+        const added = c.renewal.addCount;
+        sendEmail(c.email, 'Coworking Renewal Confirmed - StartupTN',
+          `Dear ${c.name},\n\nYour payment is verified and your coworking space is renewed.\n\nCoworking ID: ${c.id}\nNew period: ${formatDate(c.renewal.startDate)} to ${formatDate(c.renewal.endDate)}\nTotal seats: ${c.renewal.newSeats}\n${added > 0 ? `\nPlease add the details of your ${added} new member(s) here:\n${portalLink(c.id)}\n` : ''}\nBest regards,\nStartupTN Team`);
+      } else {
+        await saveCowork({ ...c, status: 'approved', paymentStatus: 'paid', payment, reviewed: now });
+        sendEmail(c.email, 'Coworking Payment Verified - StartupTN',
+          `Dear ${c.name},\n\nYour payment is verified and your seats are now ALLOTTED.\n\nCoworking ID: ${c.id}\nPeriod: ${formatDate(c.startDate)} to ${formatDate(c.endDate)}\nSeats allotted: ${c.seats}\n\nYou can now register your team members here:\n${portalLink(c.id)}\n\nBest regards,\nStartupTN Team`);
+      }
+    } catch (error) {
+      console.error('Error verifying payment:', error);
+      alert('Error verifying payment!');
+    }
+  };
+
+  const recordOfflinePayment = (c) => {
+    const amount = parseFloat(prompt('Amount received (₹):'));
+    if (!(amount > 0)) return;
+    const reference = prompt('Receipt / reference number:');
+    if (!reference) return;
+    verifyPayment(c.id, { amount, mode: 'Offline (recorded by admin)', reference: reference.trim() });
+  };
+
+  const rejectPayment = async (c) => {
+    const reason = prompt('Reason for rejecting this payment:');
+    if (!reason) return;
+    try {
+      const updated = c.renewal
+        ? { ...c, renewal: { ...c.renewal, paymentStatus: 'unpaid', payment: null }, msg: reason }
+        : { ...c, paymentStatus: 'unpaid', payment: null, msg: reason };
+      await saveCowork(updated);
+      sendEmail(c.email, 'Coworking Payment Could Not Be Verified - StartupTN',
+        `Dear ${c.name},\n\nWe could not verify the payment submitted for Coworking ID ${c.id}.\n\nReason: ${reason}\n\nPlease submit the correct payment details here:\n${portalLink(c.id)}\n\nBest regards,\nStartupTN Team`);
+    } catch (error) { console.error(error); alert('Error rejecting payment!'); }
+  };
+
+  // Admin 'Mark Exited': ask for the exit date, then record it
+  const adminExit = (c) => setExitModal({ c, date: new Date().toISOString().split('T')[0], note: '' });
+
+  const confirmAdminExit = async () => {
+    const { c, date, note } = exitModal;
+    if (!date) { alert('Please select the exit date.'); return; }
+    try {
+      await saveCowork({ ...c, status: 'exited', exitDate: date, exitedOn: new Date().toLocaleString(), exitNote: note.trim(), renewal: null });
+      setExitModal(null);
+    } catch (error) { console.error(error); alert('Error recording exit!'); }
+  };
+
+  // Reminder is due REMINDER_DAYS_BEFORE_END (2) days before the end date.
+  const sendRenewalReminder = async (c) => {
+    const left = daysUntil(c.endDate);
+    const when = left < 0 ? `ended on ${formatDate(c.endDate)}` : left === 0 ? 'ends today' : `ends on ${formatDate(c.endDate)} (${left} day${left === 1 ? '' : 's'} left)`;
+    sendEmail(c.email, `Coworking space ${left < 0 ? 'ended' : 'ending soon'} - please confirm renewal (${c.id})`,
+      `Dear ${c.name},\n\nYour coworking space for ${c.company} ${when}.\n\nCoworking ID: ${c.id}\nCurrent period: ${formatDate(c.startDate)} to ${formatDate(c.endDate)}\nSeats: ${c.seats}\n\nPlease let us know whether you wish to continue:\n${portalLink(c.id)}\n\nOn that page you can:\n- Continue the space (reconfirm and pay) or exit\n- Confirm your existing members and remove anyone who is leaving\n- Confirm the number of new members joining\n\nBest regards,\nStartupTN Team`);
+    try { await saveCowork({ ...c, reminderSentFor: c.endDate, reminderSentOn: new Date().toLocaleString() }); }
+    catch (error) { console.error(error); }
+  };
+
+  const renderCoworkCard = (c) => (
+      <div key={c.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${statusMeta(c).color}` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <div>
+            <h3 style={{ color: '#2B4C7E', fontWeight: '600', margin: '0 0 0.5rem' }}>{c.name} <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>({c.id})</span>
+            {latestActivity(c) > tagCow && <span style={{ marginLeft: '0.5rem', padding: '0.15rem 0.6rem', background: '#FEE2E2', color: '#b91c1c', border: '1px solid #FCA5A5', borderRadius: '10px', fontSize: '0.7rem', fontWeight: '700', verticalAlign: 'middle' }}>{(c.createdAt || '') > tagCow ? 'NEW' : 'PAYMENT RECEIVED'}</span>}</h3>
+            <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><Briefcase size={16} style={{ verticalAlign: 'middle' }} /> {c.company}</p>
+            <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Mail size={16} style={{ verticalAlign: 'middle' }} /> {c.email} | <Phone size={16} style={{ verticalAlign: 'middle' }} /> {c.fullPhone || c.phone}</p>
+            <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Seats:</strong> {c.seats} | <strong>Cycle:</strong> {c.cycle || 1} | <strong>Members:</strong> {activeMembersCount(c.id)}</p>
+            <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Period:</strong> {formatDate(c.startDate)} → {formatDate(c.endDate)}{isActiveRec(c) && daysUntil(c.endDate) !== null && daysUntil(c.endDate) <= 7 ? <span style={{ color: daysUntil(c.endDate) < 0 ? '#dc2626' : '#b7791f', fontWeight: '600' }}> ({daysUntil(c.endDate) < 0 ? 'ended' : daysUntil(c.endDate) + 'd left'})</span> : null}</p>
+            {c.payment && <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Payment:</strong> ₹{c.payment.amount} via {c.payment.mode} — Ref {c.payment.reference} {c.paymentStatus === 'paid' || c.payment.verifiedOn ? '✔ verified' : '(to verify)'}</p>}
+            {c.renewal && (
+              <p style={{ color: '#7c3aed', margin: '0.5rem 0', padding: '0.5rem', background: '#F5F3FF', borderRadius: '4px' }}>
+                <strong>🔁 Renewal:</strong> {formatDate(c.renewal.startDate)} → {formatDate(c.renewal.endDate)} | seats {c.seats} → {c.renewal.newSeats} (−{c.renewal.removeIds.length} leaving, −{c.renewal.release || 0} released, +{c.renewal.addCount} new) | payment: {c.renewal.paymentStatus}
+                {c.renewal.payment && ` — ₹${c.renewal.payment.amount}, Ref ${c.renewal.payment.reference}`}
+              </p>
+            )}
+            {c.status === 'exited' && (c.exitDate || c.exitedOn) && <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Exit date:</strong> {c.exitDate ? formatDate(c.exitDate) : c.exitedOn}{c.exitNote ? ` — ${c.exitNote}` : ''}</p>}
+            {c.reminderSentFor === c.endDate && c.reminderSentOn && <p style={{ color: '#6b7280', margin: '0.25rem 0', fontSize: '0.85rem' }}>📧 Renewal reminder sent {c.reminderSentOn}</p>}
+            {c.gstin && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>GSTIN:</strong> {c.gstin}</p>}
+            {c.smartCard && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>Smart Card No:</strong> {c.smartCard}</p>}
+            {c.address && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>Address:</strong> {c.address}</p>}
+            <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {c.purpose}</p>
+            {c.msg && <p style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '0.5rem', padding: '0.5rem', background: '#ffffff', borderRadius: '4px' }}><strong>Admin:</strong> {c.msg}</p>}
+          </div>
+          <span style={{ padding: '0.5rem 1rem', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '600', height: 'fit-content', background: statusMeta(c).bg, color: statusMeta(c).color }}>
+            {statusMeta(c).label}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          {(() => {
+            const okBtn = { flex: 1, padding: '0.75rem', background: 'rgba(13, 140, 79, 0.1)', color: '#059669', border: '2px solid #059669', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' };
+            const badBtn = { flex: 1, padding: '0.75rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: '2px solid #dc2626', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' };
+            const payState = c.renewal ? c.renewal.paymentStatus : c.paymentStatus;
+            const needsVerify = (c.status === 'pending' || c.renewal) && payState === 'submitted';
+            const approving = needsApproval(c);
+            const awaiting = (c.status === 'pending' && !approving && !isPaidRec(c)) || (c.renewal && payState === 'unpaid');
+            return <>
+              {needsVerify && <>
+                <button onClick={() => verifyPayment(c.id)} style={okBtn}><CheckCircle size={18} style={{ verticalAlign: 'middle' }} /> Verify {c.renewal ? 'Renewal ' : ''}Payment</button>
+                <button onClick={() => rejectPayment(c)} style={badBtn}><XCircle size={18} style={{ verticalAlign: 'middle' }} /> Reject Payment</button>
+              </>}
+              {!needsVerify && awaiting && (
+                <button onClick={() => recordOfflinePayment(c)} style={{ ...okBtn, color: '#2B4C7E', borderColor: '#2B4C7E', background: 'rgba(43,76,126,0.08)' }}>Record {c.renewal ? 'renewal ' : ''}payment (offline)</button>
+              )}
+              {approving && (
+                <button onClick={() => { const m = prompt('Approval message (optional):'); if (m !== null) approveCowork(c, m); }} style={okBtn}><CheckCircle size={18} style={{ verticalAlign: 'middle' }} /> Approve Request</button>
+              )}
+              {c.status === 'pending' && !needsVerify && (
+                <button onClick={() => { const m = prompt('Rejection reason:'); if (m) updateCowork(c.id, 'rejected', m); }} style={badBtn}><XCircle size={18} style={{ verticalAlign: 'middle' }} /> Reject Request</button>
+              )}
+              {isActiveRec(c) && daysUntil(c.endDate) !== null && daysUntil(c.endDate) <= 7 && !c.renewal && (
+                <button onClick={() => sendRenewalReminder(c)} style={{ ...okBtn, color: '#b7791f', borderColor: '#F5A623', background: 'rgba(245,166,35,0.1)' }}>📧 {c.reminderSentFor === c.endDate ? 'Resend' : 'Send'} renewal reminder</button>
+              )}
+              {c.status === 'approved' && (
+                <button onClick={() => adminExit(c)} style={{ ...badBtn, color: '#6b7280', borderColor: '#6b7280', background: 'rgba(107,114,128,0.1)' }}>Mark Exited</button>
+              )}
+            </>;
+          })()}
+          <button onClick={() => { setEditC(c); setTab('edit-c'); }} style={{ padding: '0.75rem 1rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Edit2 size={18} /></button>
+          <button onClick={async () => { 
+  if (confirm('Delete this request?')) {
+    try {
+      await deleteCoworking(c.firebaseId);
+      setCoworking(coworking.filter(x => x.firebaseId !== c.firebaseId));
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Error deleting!');
+    }
+  }
+}} style={{ padding: '0.75rem 1rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Trash2 size={18} /></button>
+        </div>
+      </div>
+  );
+
+  const renderHallCard = (b) => {
+    const di = hallDateInfo(b);
+    const live = di && di.kind !== 'past';
+    const tint = !live ? '#f3f4f6' : di.kind === 'today' ? '#FEF9E7' : di.confirmed ? '#EFF6FF' : '#f3f4f6';
+    const chipTxt = !di ? null : di.kind === 'past' ? 'Completed'
+      : di.confirmed ? (di.kind === 'today' ? '📌 Occupied today' : `📌 Occupied · in ${di.days} day${di.days === 1 ? '' : 's'}`)
+      : (di.kind === 'today' ? 'Requested for today' : `Requested · in ${di.days} day${di.days === 1 ? '' : 's'}`);
+    const chipSty = !di ? {} : di.kind === 'past' ? { background: '#E5E7EB', color: '#6b7280' }
+      : di.confirmed ? (di.kind === 'today' ? { background: '#FDE68A', color: '#92400e' } : { background: '#DBEAFE', color: '#1e40af' })
+      : { background: '#FEF3C7', color: '#92400e' };
+    return (
+      <div key={b.id} style={{ background: tint, padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <div>
+            <h3 style={{ color: '#2B4C7E', fontWeight: '600', margin: '0 0 0.5rem' }}>{b.hallName} <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>({b.id})</span></h3>
+            <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>Organizer:</strong> {b.organizerName} ({b.organization})</p>
+            <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Mail size={16} style={{ verticalAlign: 'middle' }} /> {b.email} | <Phone size={16} style={{ verticalAlign: 'middle' }} /> {b.fullPhone || b.phone}</p>
+            <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Calendar size={16} style={{ verticalAlign: 'middle' }} /> <span style={{ fontWeight: live ? '700' : '400', color: live ? '#1f2937' : undefined }}>{b.date}</span> | {b.start} - {b.end}
+              {chipTxt && <span style={{ marginLeft: '0.75rem', padding: '0.2rem 0.7rem', borderRadius: '10px', fontSize: '0.78rem', fontWeight: '600', ...chipSty }}>{chipTxt}</span>}</p>
+            {b.gstin && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>GSTIN:</strong> {b.gstin}</p>}
+            {b.smartCard && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>Smart Card No:</strong> {b.smartCard}</p>}
+            {b.address && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>Address:</strong> {b.address}</p>}
+            <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {b.purpose}</p>
+            <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Attendees: {b.attendees}{b.req && ` | Requirements: ${b.req}`}</p>
+            {b.msg && <p style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '0.5rem', padding: '0.5rem', background: '#ffffff', borderRadius: '4px' }}><strong>Admin:</strong> {b.msg}</p>}
+          </div>
+          <span style={{ padding: '0.5rem 1rem', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '600', height: 'fit-content', background: b.status === 'approved' ? 'rgba(13, 140, 79, 0.1)' : b.status === 'rejected' ? 'rgba(220, 38, 38, 0.1)' : 'rgba(245, 166, 35, 0.1)', color: b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623' }}>
+            {b.status.toUpperCase()}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          {b.status === 'pending' && <>
+            <button onClick={() => { const m = prompt('Approval message (optional):'); if (m !== null) updateBooking(b.id, 'approved', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(13, 140, 79, 0.1)', color: '#059669', border: '2px solid #059669', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><CheckCircle size={18} style={{ verticalAlign: 'middle' }} /> Approve</button>
+            <button onClick={() => { const m = prompt('Rejection reason:'); if (m) updateBooking(b.id, 'rejected', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: '2px solid #dc2626', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><XCircle size={18} style={{ verticalAlign: 'middle' }} /> Reject</button>
+          </>}
+          <button onClick={() => { setEditB(b); setTab('edit-b'); }} style={{ padding: '0.75rem 1rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Edit2 size={18} /></button>
+          <button onClick={async () => { 
+  if (confirm('Delete this booking?')) {
+    try {
+      await deleteBooking(b.firebaseId);
+      setBookings(bookings.filter(x => x.firebaseId !== b.firebaseId));
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Error deleting!');
+    }
+  }
+}} style={{ padding: '0.75rem 1rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Trash2 size={18} /></button>
+        </div>
+      </div>
+  ); };
+
+  const dueReminders = coworking.filter(needsReminder);
+  const activeMembersCount = (id) => coworkingMembers.filter(m => m.bookingId === id && !m.removed).length;
+  const isActiveRec = isActive;
+  const isPaidRec = isPaid;
   
  const exportToExcel = (data, fileName) => {
   if (!data?.length) { 
@@ -673,6 +992,20 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       delete cleaned.countryCode;
     }
     
+    // Flatten coworking payment / renewal objects so Excel doesn't show [object Object]
+    if (cleaned.payment && typeof cleaned.payment === 'object') {
+      cleaned.paymentAmount = cleaned.payment.amount;
+      cleaned.paymentMode = cleaned.payment.mode;
+      cleaned.paymentRef = cleaned.payment.reference;
+    }
+    delete cleaned.payment;
+    if (Array.isArray(cleaned.history)) { cleaned.renewalsCompleted = cleaned.history.length; }
+    delete cleaned.history;
+    if (cleaned.renewal && typeof cleaned.renewal === 'object') {
+      cleaned.renewalPending = `${cleaned.renewal.startDate} to ${cleaned.renewal.endDate}, seats ${cleaned.renewal.newSeats}, payment ${cleaned.renewal.paymentStatus}`;
+    }
+    delete cleaned.renewal;
+
     // Format accompanying visitors properly
     if (cleaned.accompanying && Array.isArray(cleaned.accompanying)) {
       cleaned.accompanying = cleaned.accompanying.map(a => 
@@ -780,11 +1113,11 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <button onClick={() => setTab('admin-e')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-e' ? '#2B4C7E' : 'transparent', color: tab === 'admin-e' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-e' ? '600' : '500', borderBottom: tab === 'admin-e' ? '3px solid #F5A623' : 'none' }}>Events</button>
             <button onClick={() => setTab('admin-h')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-h' ? '#2B4C7E' : 'transparent', color: tab === 'admin-h' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-h' ? '600' : '500', borderBottom: tab === 'admin-h' ? '3px solid #F5A623' : 'none' }}>Halls</button>
             <button onClick={() => setTab('admin-b')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-b' ? '#2B4C7E' : 'transparent', color: tab === 'admin-b' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-b' ? '600' : '500', borderBottom: tab === 'admin-b' ? '3px solid #F5A623' : 'none' }}>Bookings</button>
-            <button onClick={() => setTab('admin-c')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-c' ? '#2B4C7E' : 'transparent', color: tab === 'admin-c' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-c' ? '600' : '500', borderBottom: tab === 'admin-c' ? '3px solid #F5A623' : 'none' }}>Coworking</button>
+            <button onClick={() => setTab('admin-c')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-c' ? '#2B4C7E' : 'transparent', color: tab === 'admin-c' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-c' ? '600' : '500', borderBottom: tab === 'admin-c' ? '3px solid #F5A623' : 'none', position: 'relative' }}>Coworking{unreadCow > 0 && <span style={badgeStyle}>{unreadCow}</span>}</button>
             <button onClick={() => setTab('admin-cm')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-cm' ? '#2B4C7E' : 'transparent', color: tab === 'admin-cm' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-cm' ? '600' : '500', borderBottom: tab === 'admin-cm' ? '3px solid #F5A623' : 'none' }}>Members</button>
             <button onClick={() => setTab('admin-r')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-r' ? '#2B4C7E' : 'transparent', color: tab === 'admin-r' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-r' ? '600' : '500', borderBottom: tab === 'admin-r' ? '3px solid #F5A623' : 'none' }}>Reports</button>
             <button onClick={() => setTab('admin-fb')} style={{ padding: '0.75rem 1.5rem', background: tab === 'admin-fb' ? '#2B4C7E' : 'transparent', color: tab === 'admin-fb' ? '#ffffff' : '#6b7280', border: 'none', cursor: 'pointer', fontWeight: tab === 'admin-fb' ? '600' : '500', borderBottom: tab === 'admin-fb' ? '3px solid #F5A623' : 'none', position: 'relative' }}>
-              Feedback {feedbacks.length > 0 && <span style={{ position: 'absolute', top: '6px', right: '6px', background: '#dc2626', color: '#fff', borderRadius: '50%', width: '18px', height: '18px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{feedbacks.length}</span>}
+              Feedback {unreadFb > 0 && <span style={badgeStyle}>{unreadFb}</span>}
             </button>
           </>
         )}
@@ -820,7 +1153,9 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
                     { t: 'Visitors', v: visitors.length, i: Users },
                     { t: 'Events', v: events.length, i: Calendar },
                     { t: 'Pending Bookings', v: bookings.filter(b => b.status === 'pending').length, i: Building },
-                    { t: 'Coworking Requests', v: coworking.filter(c => c.status === 'pending').length, i: Briefcase }
+                    { t: 'Coworking Awaiting Approval', v: coworking.filter(needsApproval).length, i: Briefcase },
+                    { t: 'Coworking Pending Payment', v: coworking.filter(c => c.status === 'pending' && !needsApproval(c)).length, i: Briefcase },
+                    { t: 'Renewals Due', v: dueReminders.length, i: Briefcase }
                   ].map(x => (
                     <div key={x.t} style={{ ...card, textAlign: 'center', background: 'linear-gradient(135deg, #2B4C7E 0%, #1e3a5f 100%)', border: '2px solid #F5A623' }}>
                       <x.i size={32} color="#F5A623" />
@@ -1300,34 +1635,50 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
           type="date" 
           value={cForm.startDate}
           min={getTodayDate()}
-          onChange={(e) => setCForm({...cForm, startDate: e.target.value})}
+          onChange={(e) => setCForm({...cForm, startDate: e.target.value, endDate: cForm.endDate && cForm.endDate < e.target.value ? '' : cForm.endDate})}
           required
           style={inp}
         />
       </div>
       <div>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Duration *</label>
-        <select value={cForm.duration} onChange={(e) => setCForm({ ...cForm, duration: e.target.value })} required style={inp}>
-          <option value="">Select</option>
-          {['daily', 'weekly', 'monthly', 'quarterly'].map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
-        </select>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>End Date *</label>
+        <input 
+          type="date" 
+          value={cForm.endDate}
+          min={cForm.startDate || getTodayDate()}
+          onChange={(e) => setCForm({...cForm, endDate: e.target.value})}
+          required
+          style={inp}
+        />
       </div>
       <div style={{ gridColumn: '1 / -1' }}>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose *</label>
         <textarea value={cForm.purpose} onChange={(e) => setCForm({ ...cForm, purpose: e.target.value })} required style={{ ...inp, minHeight: '100px' }} />
       </div>
       <div style={{ gridColumn: '1 / -1' }}>
-        <button type="submit" style={{ ...btn, width: '100%' }}>Submit Request</button>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Address *</label>
+        <textarea value={cForm.address} onChange={(e) => setCForm({ ...cForm, address: e.target.value })} required style={{ ...inp, minHeight: '80px' }} placeholder="Billing / company address" />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>GSTIN <span style={{ fontWeight: '400', color: '#6b7280' }}>(optional)</span></label>
+        <input type="text" value={cForm.gstin} onChange={(e) => setCForm({ ...cForm, gstin: e.target.value.toUpperCase() })} maxLength="15" style={inp} placeholder="15-character GSTIN" />
+      </div>
+      <div>
+        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Smart Card Number <span style={{ fontWeight: '400', color: '#6b7280' }}>(optional)</span></label>
+        <input type="text" value={cForm.smartCard} onChange={(e) => setCForm({ ...cForm, smartCard: e.target.value })} style={inp} placeholder="Smart Card Number" />
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <button type="submit" style={{ ...btn, width: '100%' }}>Register &amp; Get Coworking ID</button>
       </div>
     </form>
     <div style={{ marginTop: '2rem', padding: '1.5rem', background: '#EFF6FF', border: '2px solid #2B4C7E', borderRadius: '10px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h3 style={{ color: '#2B4C7E', fontWeight: '700', margin: '0 0 0.25rem' }}>👥 Team Member Registration</h3>
-          <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>Already have a Booking ID? Register your team members here.</p>
+          <h3 style={{ color: '#2B4C7E', fontWeight: '700', margin: '0 0 0.25rem' }}>🔑 Already have a Coworking ID?</h3>
+          <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>Pay, register or update team members, and renew or exit using your ID.</p>
         </div>
-        <button onClick={() => setTab('cowork-member')} style={{ ...btn, background: '#F5A623', whiteSpace: 'nowrap' }}>
-          + Register Members
+        <button onClick={() => { setPortalId(''); setTab('cowork-manage'); }} style={{ ...btn, background: '#F5A623', whiteSpace: 'nowrap' }}>
+          Open with my ID
         </button>
       </div>
     </div>
@@ -1382,7 +1733,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
   <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
     <div style={{ position: 'relative', flex: '2', minWidth: '220px' }}>
       <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
-      <input type="text" placeholder="Search by ID, Name, Company, Email..." value={visitorSearch} onChange={(e) => setVisitorSearch(e.target.value)} style={{ ...inp, paddingLeft: '2.5rem' }} />
+      <input type="text" placeholder="Search by ID, Name, Company, To Meet, Purpose, Phone, Accompanying..." value={visitorSearch} onChange={(e) => setVisitorSearch(e.target.value)} style={{ ...inp, paddingLeft: '2.5rem' }} />
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
       <label style={{ color: '#6b7280', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>From:</label>
@@ -1446,14 +1797,30 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
           </thead>
           <tbody>
             {[...getFilteredVisitors()].sort((a, b) => parseVisitorId(b.id) - parseVisitorId(a.id)).map((v, i) => (
-              <tr key={v.id} style={{ borderBottom: '1px solid #e5e7eb', background: selectedVisitors.includes(v.firebaseId) ? 'rgba(45,74,126,0.07)' : i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
+              <tr key={v.firebaseId || `${v.id}-${i}`} style={{ borderBottom: '1px solid #e5e7eb', background: selectedVisitors.includes(v.firebaseId) ? 'rgba(45,74,126,0.07)' : i % 2 === 0 ? '#f9fafb' : 'transparent' }}>
                 <td style={{ padding: '0.75rem' }}>
                   <input type="checkbox" checked={selectedVisitors.includes(v.firebaseId)} onChange={(e) => {
                     if (e.target.checked) setSelectedVisitors([...selectedVisitors, v.firebaseId]);
                     else setSelectedVisitors(selectedVisitors.filter(id => id !== v.firebaseId));
                   }} />
                 </td>
-                <td style={{ padding: '0.75rem', color: '#6b7280', fontSize: '0.85rem' }}>{v.id}</td>
+                <td style={{ padding: '0.75rem', color: '#6b7280', fontSize: '0.85rem', position: 'relative' }}
+                    onMouseEnter={() => (v.accompanying?.length ? setAccHover(v.firebaseId) : null)}
+                    onMouseLeave={() => setAccHover(null)}>
+                  <span style={{ cursor: v.accompanying?.length ? 'help' : 'default', borderBottom: v.accompanying?.length ? '1px dotted #94a3b8' : 'none' }}>{v.id}</span>
+                  {v.accompanying?.length > 0 && <span style={{ marginLeft: '0.35rem', background: '#EFF6FF', color: '#1d4ed8', borderRadius: '999px', padding: '0 0.4rem', fontSize: '0.7rem', fontWeight: 600 }}>+{v.accompanying.length}</span>}
+                  {accHover === v.firebaseId && v.accompanying?.length > 0 && (
+                    <div style={{ position: 'absolute', top: '100%', left: '0.5rem', zIndex: 20, minWidth: '220px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', boxShadow: '0 6px 18px rgba(0,0,0,0.12)', padding: '0.6rem 0.75rem', textAlign: 'left' }}>
+                      <div style={{ fontWeight: 600, color: '#2B4C7E', marginBottom: '0.35rem', fontSize: '0.8rem' }}>Accompanying ({v.accompanying.length})</div>
+                      {v.accompanying.map((a, k) => (
+                        <div key={k} style={{ fontSize: '0.8rem', color: '#1f2937', padding: '0.2rem 0', borderTop: k ? '1px solid #f1f5f9' : 'none' }}>
+                          <div style={{ fontWeight: 500 }}>{a.name || '—'}</div>
+                          <div style={{ color: '#6b7280' }}>{[a.phone ? `${a.countryCode || ''} ${a.phone}` : '', a.company].filter(Boolean).join(' · ') || 'No other details'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </td>
                 <td style={{ padding: '0.75rem', color: '#1f2937' }}>{v.prefix ? `${v.prefix}. ${v.name}` : v.name}</td>
                 <td style={{ padding: '0.75rem', color: '#6b7280' }}>{v.email}</td>
                 <td style={{ padding: '0.75rem', color: '#6b7280' }}>{v.fullPhone || v.phone}</td>
@@ -1660,42 +2027,62 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         </div>
       ))}
     </div>
-    {bookings.length > 0 ? [...getFilteredBookings()].sort((a, b) => parseBookingId(b.id) - parseBookingId(a.id)).map(b => (
-      <div key={b.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <div>
-            <h3 style={{ color: '#2B4C7E', fontWeight: '600', margin: '0 0 0.5rem' }}>{b.hallName} <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>({b.id})</span></h3>
-            <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>Organizer:</strong> {b.organizerName} ({b.organization})</p>
-            <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Mail size={16} style={{ verticalAlign: 'middle' }} /> {b.email} | <Phone size={16} style={{ verticalAlign: 'middle' }} /> {b.fullPhone || b.phone}</p>
-            <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Calendar size={16} style={{ verticalAlign: 'middle' }} /> {b.date} | {b.start} - {b.end}</p>
-            <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {b.purpose}</p>
-            <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Attendees: {b.attendees}{b.req && ` | Requirements: ${b.req}`}</p>
-            {b.msg && <p style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '0.5rem', padding: '0.5rem', background: '#ffffff', borderRadius: '4px' }}><strong>Admin:</strong> {b.msg}</p>}
-          </div>
-          <span style={{ padding: '0.5rem 1rem', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '600', height: 'fit-content', background: b.status === 'approved' ? 'rgba(13, 140, 79, 0.1)' : b.status === 'rejected' ? 'rgba(220, 38, 38, 0.1)' : 'rgba(245, 166, 35, 0.1)', color: b.status === 'approved' ? '#059669' : b.status === 'rejected' ? '#dc2626' : '#F5A623' }}>
-            {b.status.toUpperCase()}
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          {b.status === 'pending' && <>
-            <button onClick={() => { const m = prompt('Approval message (optional):'); if (m !== null) updateBooking(b.id, 'approved', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(13, 140, 79, 0.1)', color: '#059669', border: '2px solid #059669', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><CheckCircle size={18} style={{ verticalAlign: 'middle' }} /> Approve</button>
-            <button onClick={() => { const m = prompt('Rejection reason:'); if (m) updateBooking(b.id, 'rejected', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: '2px solid #dc2626', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><XCircle size={18} style={{ verticalAlign: 'middle' }} /> Reject</button>
-          </>}
-          <button onClick={() => { setEditB(b); setTab('edit-b'); }} style={{ padding: '0.75rem 1rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Edit2 size={18} /></button>
-          <button onClick={async () => { 
-  if (confirm('Delete this booking?')) {
-    try {
-      await deleteBooking(b.firebaseId);
-      setBookings(bookings.filter(x => x.firebaseId !== b.firebaseId));
-    } catch (error) {
-      console.error('Error:', error);
-      alert('Error deleting!');
-    }
-  }
-}} style={{ padding: '0.75rem 1rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Trash2 size={18} /></button>
-        </div>
-      </div>
-    )) : <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No bookings yet</p>}
+    {bookings.length > 0 ? (() => {
+      const rows = [...getFilteredBookings()].sort((a, b) => parseBookingId(b.id) - parseBookingId(a.id));
+      if (rows.length === 0) return <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No bookings match.</p>;
+      // One group per hall
+      const groups = {};
+      rows.forEach(b => { (groups[(b.hallName || 'Unknown hall').trim().toLowerCase()] ||= []).push(b); });
+      const list = Object.entries(groups).map(([key, items]) => {
+        const n = (st) => items.filter(x => x.status === st).length;
+        return { key, name: (items[0].hallName || 'Unknown hall').trim(), items, pending: n('pending'), approved: n('approved'), rejected: n('rejected') };
+      }).sort((a, b) => (b.pending > 0) - (a.pending > 0) || a.name.localeCompare(b.name));
+      const monthOf = (b) => (b.date && /^\d{4}-\d{2}/.test(b.date)) ? b.date.slice(0, 7) : monthKeyOf(null, b.id);
+      return <>
+        <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem' }}>
+          <button onClick={() => setHallOpen(Object.fromEntries(list.map(g => [g.key, true])))} style={{ background: 'none', border: 'none', color: '#2B4C7E', cursor: 'pointer', fontWeight: '600', textDecoration: 'underline' }}>Expand all</button>
+          <span style={{ color: '#9ca3af' }}> | </span>
+          <button onClick={() => setHallOpen({})} style={{ background: 'none', border: 'none', color: '#2B4C7E', cursor: 'pointer', fontWeight: '600', textDecoration: 'underline' }}>Collapse all</button>
+        </p>
+        {list.map(g => {
+          const isOpen = !!hallOpen[g.key];
+          const accent = g.pending > 0 ? '#F5A623' : '#2B4C7E';
+          const months = {};
+          g.items.forEach(b => { (months[monthOf(b)] ||= []).push(b); });
+          const upcoming = g.items.filter(x => { const d = hallDateInfo(x); return d && d.confirmed && d.kind !== 'past'; });
+          const nextDate = upcoming.map(x => x.date).sort()[0];
+          const chip = (n, label, c) => n > 0 && <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '700', background: '#ffffff', color: c, border: `2px solid ${c}` }}>{n} {label}</span>;
+          return (
+            <div key={g.key} style={{ marginBottom: '1rem', border: `2px solid ${accent}`, borderLeft: `10px solid ${accent}`, borderRadius: '10px', overflow: 'hidden' }}>
+              <div onClick={() => setHallOpen({ ...hallOpen, [g.key]: !isOpen })}
+                style={{ background: g.pending > 0 ? '#FEF3C7' : '#EFF6FF', borderBottom: isOpen ? `2px solid ${accent}` : 'none', padding: '1rem 1.5rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '1.1rem', fontWeight: '700', color: accent }}>{g.name}</span>
+                  <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>{g.items.length} booking(s)</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {upcoming.length > 0 && <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '600', background: '#DBEAFE', color: '#1e40af' }}>📌 {upcoming.length} upcoming · next {formatDate(nextDate)}</span>}
+                  {chip(g.pending, 'pending', '#b45309')}
+                  {chip(g.approved, 'approved', '#059669')}
+                  {chip(g.rejected, 'rejected', '#dc2626')}
+                  <span style={{ color: accent, fontSize: '1.2rem', fontWeight: '700', marginLeft: '0.5rem' }}>{isOpen ? '▲' : '▼'}</span>
+                </div>
+              </div>
+              {isOpen && (
+                <div style={{ padding: '1rem 1.5rem' }}>
+                  {Object.keys(months).sort().reverse().map(mk => (
+                    <div key={mk} style={{ marginBottom: '1rem' }}>
+                      <h4 style={{ color: '#2B4C7E', fontWeight: '700', margin: '0 0 0.75rem', paddingBottom: '0.35rem', borderBottom: '2px solid #F5A623' }}>📅 {monthLabel(mk)} <span style={{ color: '#6b7280', fontWeight: '400', fontSize: '0.85rem' }}>({months[mk].length})</span></h4>
+                      {months[mk].map(b => renderHallCard(b))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </>;
+    })() : <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No bookings yet</p>}
   </div>
 )}
 
@@ -1716,61 +2103,108 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     </div>
     <select value={coworkingStatusFilter} onChange={(e) => setCoworkingStatusFilter(e.target.value)} style={inp}>
       <option value="all">All Status</option>
-      <option value="pending">Pending</option>
-      <option value="approved">Approved</option>
+      <option value="pending">Awaiting approval / payment</option>
+      <option value="approved">Active</option>
+      <option value="exited">Exited</option>
       <option value="rejected">Rejected</option>
     </select>
     <button onClick={() => exportToExcel(getFilteredCoworking(), 'StartupTN_Coworking')} style={btn}><Download size={18} /> Export Excel</button>
   </div>
 </div>
-    <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+    {dueReminders.length > 0 && (
+      <div style={{ background: '#FFFBEB', border: '2px solid #F5A623', borderRadius: '10px', padding: '1rem 1.5rem', marginBottom: '1.5rem' }}>
+        <h3 style={{ color: '#b7791f', margin: '0 0 0.75rem', fontWeight: '700' }}>⏰ Renewal reminders due ({dueReminders.length})</h3>
+        {dueReminders.map(c => {
+          const left = daysUntil(c.endDate);
+          return (
+            <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', padding: '0.5rem 0', borderTop: '1px solid #fde68a' }}>
+              <span style={{ color: '#1f2937' }}><strong>{c.company}</strong> ({c.id}) — ends {formatDate(c.endDate)} <span style={{ color: left < 0 ? '#dc2626' : '#b7791f', fontWeight: '600' }}>{left < 0 ? `(ended ${-left}d ago)` : left === 0 ? '(today)' : `(${left}d left)`}</span></span>
+              <button onClick={() => sendRenewalReminder(c)} style={{ ...btn, padding: '0.4rem 1rem', background: '#F5A623' }}>Send reminder</button>
+            </div>
+          );
+        })}
+      </div>
+    )}
+    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
       {[
-        { l: 'Pending', v: coworking.filter(c => c.status === 'pending').length, c: '#F5A623' },
-        { l: 'Approved', v: coworking.filter(c => c.status === 'approved').length, c: '#059669' },
-        { l: 'Rejected', v: coworking.filter(c => c.status === 'rejected').length, c: '#dc2626' }
+        { k: 'new', l: 'New', v: coworking.filter(c => cowFlags(c).isNew).length, c: '#dc2626', bg: '#FEE2E2' },
+        { k: 'approval', l: 'Awaiting Approval', v: coworking.filter(c => cowFlags(c).approval).length, c: '#0f766e', bg: '#CCFBF1' },
+        { k: 'verify', l: 'Payment to Verify', v: coworking.filter(c => cowFlags(c).verify).length, c: '#1d4ed8', bg: '#DBEAFE' },
+        { k: 'awaiting', l: 'Awaiting Payment', v: coworking.filter(c => cowFlags(c).awaiting).length, c: '#b45309', bg: '#FEF3C7' },
+        { k: 'renewal', l: 'Renewals', v: coworking.filter(c => cowFlags(c).renewal).length, c: '#7c3aed', bg: '#EDE9FE' },
+        { k: 'active', l: 'Active', v: coworking.filter(c => c.status === 'approved').length, c: '#059669', bg: '#D1FAE5' },
+        { k: 'exited', l: 'Exited', v: coworking.filter(c => c.status === 'exited').length, c: '#6b7280', bg: '#E5E7EB' },
+        { k: 'rejected', l: 'Rejected', v: coworking.filter(c => c.status === 'rejected').length, c: '#991b1b', bg: '#FEE2E2' }
       ].map(x => (
-        <div key={x.l} style={{ padding: '1rem', background: '#f3f4f6', borderRadius: '8px', flex: 1, textAlign: 'center' }}>
+        <div key={x.k} onClick={() => setQuickFilter(quickFilter === x.k ? '' : x.k)} title="Click to filter"
+          style={{ padding: '0.75rem', background: x.bg, borderRadius: '8px', flex: '1 1 120px', textAlign: 'center', cursor: 'pointer', borderTop: `4px solid ${x.c}`, outline: quickFilter === x.k ? `3px solid ${x.c}` : 'none' }}>
           <p style={{ color: x.c, fontSize: '1.5rem', margin: 0, fontWeight: '700' }}>{x.v}</p>
-          <p style={{ color: '#6b7280', margin: '0.25rem 0 0', fontSize: '0.9rem' }}>{x.l}</p>
+          <p style={{ color: '#374151', margin: '0.25rem 0 0', fontSize: '0.85rem', fontWeight: quickFilter === x.k ? '700' : '500' }}>{x.l}</p>
         </div>
       ))}
     </div>
-    {coworking.length > 0 ? [...getFilteredCoworking()].sort((a, b) => parseBookingId(b.id) - parseBookingId(a.id)).map(c => (
-      <div key={c.id} style={{ background: '#f3f4f6', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem', border: `2px solid ${c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623'}` }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <div>
-            <h3 style={{ color: '#2B4C7E', fontWeight: '600', margin: '0 0 0.5rem' }}>{c.name} <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>({c.id})</span></h3>
-            <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><Briefcase size={16} style={{ verticalAlign: 'middle' }} /> {c.company}</p>
-            <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Mail size={16} style={{ verticalAlign: 'middle' }} /> {c.email} | <Phone size={16} style={{ verticalAlign: 'middle' }} /> {c.fullPhone || c.phone}</p>
-            <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Seats:</strong> {c.seats} | <strong>Duration:</strong> {c.duration}</p>
-            <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Start:</strong> {c.startDate}</p>
-            <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {c.purpose}</p>
-            {c.msg && <p style={{ color: '#2B4C7E', fontWeight: '600', marginTop: '0.5rem', padding: '0.5rem', background: '#ffffff', borderRadius: '4px' }}><strong>Admin:</strong> {c.msg}</p>}
+    {quickFilter && <p style={{ margin: '0 0 1rem', color: '#2B4C7E', fontSize: '0.9rem' }}>Showing filtered list. <button onClick={() => setQuickFilter('')} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontWeight: '600', textDecoration: 'underline' }}>Clear filter</button></p>}
+    {!quickFilter && <p style={{ margin: '0 0 1rem', color: '#6b7280', fontSize: '0.8rem' }}>Click a box above to list only those registrations. Companies needing attention are listed first.</p>}
+    {(() => {
+      const rows = [...getFilteredCoworking()].sort((a, b) => parseBookingId(b.id) - parseBookingId(a.id));
+      if (rows.length === 0) return <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No requests yet</p>;
+      // Same company registering more than once -> one group
+      const groups = {};
+      rows.forEach(c => { (groups[companyKey(c.company)] ||= []).push(c); });
+      const PRI = [
+        { k: 'isNew', label: '🆕', text: 'new', c: '#dc2626', bg: '#FEE2E2' },
+        { k: 'approval', label: '📝', text: 'awaiting approval', c: '#0f766e', bg: '#CCFBF1' },
+        { k: 'verify', label: '🔍', text: 'payment to verify', c: '#1d4ed8', bg: '#DBEAFE' },
+        { k: 'awaiting', label: '⏳', text: 'awaiting payment', c: '#b45309', bg: '#FEF3C7' },
+        { k: 'renewal', label: '🔁', text: 'renewal', c: '#7c3aed', bg: '#EDE9FE' }
+      ];
+      const list = Object.entries(groups).map(([key, items]) => {
+        const counts = PRI.map(p => ({ ...p, n: items.filter(c => cowFlags(c)[p.k]).length })).filter(p => p.n > 0);
+        return { key, name: (items[0].company || '').trim().replace(/\s+/g, ' '), items, counts, top: counts[0] || null,
+          rank: counts.length ? PRI.findIndex(p => p.k === counts[0].k) : 99 };
+      }).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+      return <>
+      <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem' }}>
+        <button onClick={() => setGroupOpen(Object.fromEntries(list.map(g => [g.key, true])))} style={{ background: 'none', border: 'none', color: '#2B4C7E', cursor: 'pointer', fontWeight: '600', textDecoration: 'underline' }}>Expand all</button>
+        <span style={{ color: '#9ca3af' }}> | </span>
+        <button onClick={() => setGroupOpen({})} style={{ background: 'none', border: 'none', color: '#2B4C7E', cursor: 'pointer', fontWeight: '600', textDecoration: 'underline' }}>Collapse all</button>
+      </p>
+      {list.map(g => {
+        const isOpen = !!groupOpen[g.key]; // everything starts collapsed
+        const live = g.items.filter(c => c.status !== 'rejected' && c.status !== 'exited');
+        const seats = live.reduce((s, c) => s + parseInt(c.seats || 0), 0);
+        const active = g.items.filter(c => c.status === 'approved').length;
+        const months = {};
+        g.items.forEach(c => { (months[monthKeyOf(c.startDate, c.id)] ||= []).push(c); });
+        const accent = g.top ? g.top.c : '#2B4C7E';
+        return (
+          <div key={g.key} style={{ marginBottom: '1rem', border: `2px solid ${accent}`, borderLeft: `10px solid ${accent}`, borderRadius: '10px', overflow: 'hidden' }}>
+            <div onClick={() => setGroupOpen({ ...groupOpen, [g.key]: !isOpen })}
+              style={{ background: g.top ? g.top.bg : '#EFF6FF', borderBottom: isOpen ? `2px solid ${accent}` : 'none', padding: '1rem 1.5rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '1.1rem', fontWeight: '700', color: accent }}>{g.name}</span>
+                <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>{g.items.length} registration(s) | {active} active | {seats} seats</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {g.counts.map(x => <span key={x.k} style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '700', background: '#ffffff', color: x.c, border: `2px solid ${x.c}` }}>{x.label} {x.n} {x.text}</span>)}
+                <span style={{ color: accent, fontSize: '1.2rem', fontWeight: '700', marginLeft: '0.5rem' }}>{isOpen ? '▲' : '▼'}</span>
+              </div>
+            </div>
+            {isOpen && (
+              <div style={{ padding: '1rem 1.5rem' }}>
+                {Object.keys(months).sort().reverse().map(mk => (
+                  <div key={mk} style={{ marginBottom: '1rem' }}>
+                    <h4 style={{ color: '#2B4C7E', fontWeight: '700', margin: '0 0 0.75rem', paddingBottom: '0.35rem', borderBottom: '2px solid #F5A623' }}>📅 {monthLabel(mk)} <span style={{ color: '#6b7280', fontWeight: '400', fontSize: '0.85rem' }}>({months[mk].length})</span></h4>
+                    {months[mk].map(c => renderCoworkCard(c))}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <span style={{ padding: '0.5rem 1rem', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '600', height: 'fit-content', background: c.status === 'approved' ? 'rgba(13, 140, 79, 0.1)' : c.status === 'rejected' ? 'rgba(220, 38, 38, 0.1)' : 'rgba(245, 166, 35, 0.1)', color: c.status === 'approved' ? '#059669' : c.status === 'rejected' ? '#dc2626' : '#F5A623' }}>
-            {c.status.toUpperCase()}
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          {c.status === 'pending' && <>
-            <button onClick={() => { const m = prompt('Approval message (optional):'); if (m !== null) updateCowork(c.id, 'approved', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(13, 140, 79, 0.1)', color: '#059669', border: '2px solid #059669', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><CheckCircle size={18} style={{ verticalAlign: 'middle' }} /> Approve</button>
-            <button onClick={() => { const m = prompt('Rejection reason:'); if (m) updateCowork(c.id, 'rejected', m); }} style={{ flex: 1, padding: '0.75rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: '2px solid #dc2626', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}><XCircle size={18} style={{ verticalAlign: 'middle' }} /> Reject</button>
-          </>}
-          <button onClick={() => { setEditC(c); setTab('edit-c'); }} style={{ padding: '0.75rem 1rem', background: 'rgba(45, 74, 124, 0.1)', color: '#2B4C7E', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Edit2 size={18} /></button>
-          <button onClick={async () => { 
-  if (confirm('Delete this request?')) {
-    try {
-      await deleteCoworking(c.firebaseId);
-      setCoworking(coworking.filter(x => x.firebaseId !== c.firebaseId));
-    } catch (error) {
-      console.error('Error:', error);
-      alert('Error deleting!');
-    }
-  }
-}} style={{ padding: '0.75rem 1rem', background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}><Trash2 size={18} /></button>
-        </div>
-      </div>
-    )) : <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No requests yet</p>}
+        );
+      })}
+      </>;
+    })()}
   </div>
 )}
 
@@ -1802,6 +2236,12 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
         </select></div>
+      <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Address</label>
+        <textarea value={editB.address || ''} onChange={e => setEditB({...editB, address: e.target.value})} style={{ ...inp, minHeight: '70px' }} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>GSTIN</label>
+        <input type="text" value={editB.gstin || ''} onChange={e => setEditB({...editB, gstin: e.target.value.toUpperCase()})} maxLength="15" style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Smart Card Number</label>
+        <input type="text" value={editB.smartCard || ''} onChange={e => setEditB({...editB, smartCard: e.target.value})} style={inp} /></div>
       <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Special Requirements</label>
         <textarea value={editB.req || ''} onChange={e => setEditB({...editB, req: e.target.value})} style={{ ...inp, minHeight: '80px' }} /></div>
     </div>
@@ -1828,16 +2268,21 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <input type="number" value={editC.seats} onChange={e => setEditC({...editC, seats: e.target.value})} style={inp} /></div>
       <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Start Date</label>
         <input type="date" value={editC.startDate} onChange={e => setEditC({...editC, startDate: e.target.value})} style={inp} /></div>
-      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Duration</label>
-        <select value={editC.duration} onChange={e => setEditC({...editC, duration: e.target.value})} style={inp}>
-          {['daily','weekly','monthly','quarterly'].map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase()+d.slice(1)}</option>)}
-        </select></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>End Date</label>
+        <input type="date" value={editC.endDate || ''} min={editC.startDate} onChange={e => setEditC({...editC, endDate: e.target.value})} style={inp} /></div>
       <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Status</label>
         <select value={editC.status} onChange={e => setEditC({...editC, status: e.target.value})} style={inp}>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
+          <option value="pending">Awaiting approval / payment</option>
+          <option value="approved">Active</option>
+          <option value="exited">Exited</option>
           <option value="rejected">Rejected</option>
         </select></div>
+      <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Address</label>
+        <textarea value={editC.address || ''} onChange={e => setEditC({...editC, address: e.target.value})} style={{ ...inp, minHeight: '70px' }} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>GSTIN</label>
+        <input type="text" value={editC.gstin || ''} onChange={e => setEditC({...editC, gstin: e.target.value.toUpperCase()})} maxLength="15" style={inp} /></div>
+      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Smart Card Number</label>
+        <input type="text" value={editC.smartCard || ''} onChange={e => setEditC({...editC, smartCard: e.target.value})} style={inp} /></div>
       <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Purpose</label>
         <textarea value={editC.purpose} onChange={e => setEditC({...editC, purpose: e.target.value})} style={{ ...inp, minHeight: '80px' }} /></div>
     </div>
@@ -1849,127 +2294,26 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
 )}
 
       
-{tab === 'cowork-member' && (
-  <div style={card}>
-    <button onClick={() => setTab('home')} style={{ ...btn, marginBottom: '1rem' }}>← Back</button>
-    <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginBottom: '0.5rem' }}>Coworking Member Registration</h2>
-    <p style={{ color: '#6b7280', marginBottom: '1.5rem', fontSize: '0.95rem' }}>Enter the Booking ID shared by your incharge to register your details.</p>
-    <form onSubmit={submitMember} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
-      <div style={{ gridColumn: '1 / -1', background: '#EFF6FF', border: '2px solid #2B4C7E', borderRadius: '8px', padding: '1rem' }}>
-        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '700' }}>Booking ID * <span style={{ fontWeight: '400', fontSize: '0.85rem' }}>(e.g. C-01072026-001)</span></label>
-        <input type="text" value={memberForm.bookingId} onChange={(e) => setMemberForm({ ...memberForm, bookingId: e.target.value })} required style={inp} placeholder="Enter your Booking ID" />
-      </div>
-      {[['Full Name *','name','text',true],['Designation *','designation','text',true],['Email ID *','email','email',true],["Father's Name *",'fatherName','text',true]].map(([label,field,type,req]) => (
-        <div key={field}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>{label}</label>
-          <input type={type} value={memberForm[field]} onChange={(e) => setMemberForm({...memberForm,[field]:e.target.value})} required={req} style={inp} /></div>
-      ))}
-      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Contact Number *</label>
-        <input type="tel" value={memberForm.contactNumber} onChange={(e) => setMemberForm({...memberForm,contactNumber:e.target.value.replace(/\D/g,'')})} maxLength="10" required style={inp} /></div>
-      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Alternate Contact</label>
-        <input type="tel" value={memberForm.alternateContact} onChange={(e) => setMemberForm({...memberForm,alternateContact:e.target.value.replace(/\D/g,'')})} maxLength="10" style={inp} /></div>
-      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Gender *</label>
-        <select value={memberForm.gender} onChange={(e) => setMemberForm({...memberForm,gender:e.target.value})} required style={inp}>
-          <option value="">Select</option>{['Male','Female','Other'].map(g=><option key={g} value={g}>{g}</option>)}</select></div>
-      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Aadhar Number *</label>
-        <input type="text" value={memberForm.aadharNo} onChange={(e) => setMemberForm({...memberForm,aadharNo:e.target.value.replace(/\D/g,'')})} maxLength="12" required style={inp} placeholder="12-digit" /></div>
-      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date of Birth *</label>
-        <input type="date" value={memberForm.dob} onChange={(e) => setMemberForm({...memberForm,dob:e.target.value})} required style={inp} /></div>
-      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Marital Status</label>
-        <select value={memberForm.maritalStatus} onChange={(e) => setMemberForm({...memberForm,maritalStatus:e.target.value})} style={inp}>
-          <option value="">Select</option>{['Single','Married','Divorced','Widowed'].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-      <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Blood Group</label>
-        <select value={memberForm.bloodGroup} onChange={(e) => setMemberForm({...memberForm,bloodGroup:e.target.value})} style={inp}>
-          <option value="">Select</option>{['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(b=><option key={b} value={b}>{b}</option>)}</select></div>
-      <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Permanent Address *</label>
-        <textarea value={memberForm.permanentAddress} onChange={(e) => setMemberForm({...memberForm,permanentAddress:e.target.value})} required style={{ ...inp, minHeight: '80px' }} /></div>
-      <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Communication Address</label>
-        <textarea value={memberForm.communicationAddress} onChange={(e) => setMemberForm({...memberForm,communicationAddress:e.target.value})} style={{ ...inp, minHeight: '80px' }} placeholder="If different from permanent address" /></div>
-      <div style={{ gridColumn: '1 / -1' }}><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Office Address</label>
-        <textarea value={memberForm.officeAddress} onChange={(e) => setMemberForm({...memberForm,officeAddress:e.target.value})} style={{ ...inp, minHeight: '80px' }} /></div>
-      <div style={{ gridColumn: '1 / -1' }}><button type="submit" style={{ ...btn, width: '100%' }}>Submit Member Details</button></div>
-    </form>
-  </div>
+{tab === 'cowork-manage' && (
+  <CoworkPortal
+    coworking={coworking}
+    setCoworking={setCoworking}
+    members={coworkingMembers}
+    setMembers={setCoworkingMembers}
+    styles={{ card, btn, inp }}
+    initialId={portalId}
+    onBack={() => setTab('home')}
+  />
 )}
 
 {tab === 'admin-cm' && isAdmin && (
-  <div style={card}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-      <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Coworking Members ({coworkingMembers.length})</h2>
-      <button onClick={() => exportToExcel(coworkingMembers, 'StartupTN_CoworkingMembers')} style={{ ...btn, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Download size={18} /> Export Excel</button>
-    </div>
-    {(() => {
-      const parseId = (id) => { try { const p=(id||'').split('-'); const d=p[1]||'01012000000'; return parseInt(d.slice(4,8))*100000000+parseInt(d.slice(2,4))*1000000+parseInt(d.slice(0,2))*10000+parseInt(p[2]||'0'); } catch{return 0;} };
-      const sortedBookings = [...coworking].sort((a,b) => parseId(b.id)-parseId(a.id));
-      const companies = [...new Set(sortedBookings.map(cw=>cw.company).filter(Boolean))].sort();
-      if (companies.length === 0) return <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No coworking bookings yet.</p>;
-      return companies.map(company => {
-        const companyBookings = sortedBookings.filter(cw=>cw.company===company);
-        const companyMembers = coworkingMembers.filter(m=>companyBookings.some(cw=>cw.id===m.bookingId));
-        const totalSeats = companyBookings.reduce((sum,cw)=>sum+parseInt(cw.seats||0),0);
-        const isExpanded = expandedCompany === company;
-        return (
-          <div key={company} style={{ marginBottom: '1rem', border: '2px solid #2B4C7E', borderRadius: '10px', overflow: 'hidden' }}>
-            <div onClick={() => setExpandedCompany(isExpanded ? null : company)}
-              style={{ background: isExpanded ? '#2B4C7E' : '#EFF6FF', padding: '1rem 1.5rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <span style={{ fontSize: '1.1rem', fontWeight: '700', color: isExpanded ? '#ffffff' : '#2B4C7E' }}>{company}</span>
-                <span style={{ fontSize: '0.85rem', color: isExpanded ? '#F5A623' : '#6b7280' }}>{companyBookings.length} booking(s) | {totalSeats} total seats</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: '600', background: companyMembers.length>0?'rgba(5,150,105,0.15)':'rgba(245,166,35,0.15)', color: companyMembers.length>0?'#059669':'#F5A623' }}>Members: {companyMembers.length} / {totalSeats}</span>
-                <span style={{ color: isExpanded ? '#ffffff' : '#2B4C7E', fontSize: '1.2rem', fontWeight: '700' }}>{isExpanded ? '▲' : '▼'}</span>
-              </div>
-            </div>
-            {isExpanded && (
-              <div style={{ padding: '1rem 1.5rem' }}>
-                <div style={{ marginBottom: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  {companyBookings.map(cw=>(
-                    <span key={cw.id} style={{ padding: '0.35rem 0.75rem', background: '#f3f4f6', borderRadius: '8px', fontSize: '0.8rem', border: '1px solid #e5e7eb' }}>
-                      <strong style={{ color: '#2B4C7E' }}>{cw.id}</strong> — {cw.seats} seat(s) | {cw.startDate} | <span style={{ color: cw.status==='approved'?'#059669':'#F5A623', fontWeight: '600' }}>{cw.status.toUpperCase()}</span>
-                    </span>
-                  ))}
-                </div>
-                <h4 style={{ color: '#2B4C7E', fontWeight: '600', marginBottom: '0.75rem' }}>Team Members ({companyMembers.length})</h4>
-                {companyMembers.length > 0 ? (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                      <thead><tr style={{ borderBottom: '2px solid #2B4C7E', background: '#f9fafb' }}>
-                        {['#','Booking ID','Name','Designation','Contact','Alt Contact','Email','Gender','Aadhar','DOB','Marital','Blood',"Father's Name",'Permanent Addr','Comm Addr','Office Addr','Del'].map(h=>(
-                          <th key={h} style={{ padding: '0.5rem 0.75rem', textAlign: 'left', color: '#2B4C7E', fontWeight: '600', whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}</tr></thead>
-                      <tbody>{companyMembers.map((m,idx)=>(
-                        <tr key={m.firebaseId} style={{ borderBottom: '1px solid #e5e7eb', background: idx%2===0?'#ffffff':'#f9fafb' }}>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{idx+1}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#2B4C7E', fontWeight: '600', whiteSpace: 'nowrap' }}>{m.bookingId}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#1f2937', whiteSpace: 'nowrap' }}>{m.name}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.designation}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.contactNumber}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.alternateContact||'—'}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.email}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.gender}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.aadharNo}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.dob}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.maritalStatus||'—'}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>{m.bloodGroup||'—'}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', whiteSpace: 'nowrap' }}>{m.fatherName}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '120px' }}>{m.permanentAddress}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '120px' }}>{m.communicationAddress||'—'}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', minWidth: '120px' }}>{m.officeAddress||'—'}</td>
-                          <td style={{ padding: '0.5rem 0.75rem' }}>
-                            <button onClick={async()=>{ if(confirm('Delete?')){ try{ await deleteCoworkingMember(m.firebaseId); setCoworkingMembers(coworkingMembers.filter(x=>x.firebaseId!==m.firebaseId)); }catch(e){alert('Error!');} }}} style={{ padding: '0.35rem 0.6rem', background: 'rgba(220,38,38,0.1)', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}><Trash2 size={14}/></button>
-                          </td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </div>
-                ) : <p style={{ color: '#6b7280', fontStyle: 'italic' }}>No members registered yet.</p>}
-              </div>
-            )}
-          </div>
-        );
-      });
-    })()}
-  </div>
+  <CoworkMembersAdmin
+    coworking={coworking}
+    members={coworkingMembers}
+    setMembers={setCoworkingMembers}
+    styles={{ card, btn, inp }}
+    exportToExcel={exportToExcel}
+  />
 )}
 
 {tab === 'admin-r' && isAdmin && (() => {
@@ -2401,6 +2745,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
                 <div>
                   <span style={{ fontWeight: '700', color: '#1f2937', fontSize: '1rem' }}>{f.name}</span>
+                  {(f.createdAt || '') > tagFb && <span style={{ marginLeft: '0.5rem', padding: '0.15rem 0.6rem', background: '#FEE2E2', color: '#b91c1c', border: '1px solid #FCA5A5', borderRadius: '10px', fontSize: '0.7rem', fontWeight: '700' }}>NEW</span>}
                   {f.email && <span style={{ color: '#6b7280', fontSize: '0.85rem', marginLeft: '0.75rem' }}>{f.email}</span>}
                   {f.phone && <span style={{ color: '#6b7280', fontSize: '0.85rem', marginLeft: '0.75rem' }}>📞 {f.phone}</span>}
                 </div>
@@ -2428,6 +2773,23 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     )}
   </div>
 )}
+
+      {exitModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#ffffff', borderRadius: '12px', padding: '2rem', maxWidth: '460px', width: '90%', border: '2px solid #2B4C7E' }}>
+            <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginTop: 0 }}>Mark as Exited</h2>
+            <p style={{ color: '#6b7280', marginTop: 0 }}><strong>{exitModal.c.company}</strong> ({exitModal.c.id})</p>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date of exit *</label>
+            <input type="date" value={exitModal.date} min={exitModal.c.startDate || undefined} onChange={(e) => setExitModal({ ...exitModal, date: e.target.value })} style={{ ...inp, marginBottom: '1rem' }} />
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Note (optional)</label>
+            <textarea value={exitModal.note} onChange={(e) => setExitModal({ ...exitModal, note: e.target.value })} style={{ ...inp, minHeight: '70px', marginBottom: '1.5rem' }} />
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button onClick={confirmAdminExit} style={{ ...btn, flex: 1, background: '#dc2626' }}>Confirm Exit</button>
+              <button onClick={() => setExitModal(null)} style={{ ...btn, flex: 1, background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {emailModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
