@@ -5,10 +5,10 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebas
 import { auth } from './firebase';
 import CoworkPortal from './CoworkPortal';
 import CoworkMembersAdmin from './CoworkMembersAdmin';
-import { mailEnabled, sendPaymentConfirmation } from './mailer';
+import { mailEnabled, sendPaymentConfirmation, sendAdminEmail } from './mailer';
 import {
   daysUntil, formatDate, needsReminder, applyRenewal, statusMeta, isActive, isPaid, needsApproval,
-  companyKey, monthKeyOf, monthLabel, latestActivity, hallDateInfo
+  companyKey, monthKeyOf, monthLabel, latestActivity, hallDateInfo, RENEWAL_WINDOW_DAYS
 } from './coworkUtils';
 import {
   getVisitors, addVisitor, updateVisitor, deleteVisitor,
@@ -21,11 +21,15 @@ import {
   addFeedback, getFeedback, deleteFeedback, listenToCoworking, listenToFeedback
 } from './firebaseUtils';
 
+// Mailbox used when sending emails from Gmail (opens Gmail signed in as this account)
+const SENDER_EMAIL = 'workspace@startuptn.in';
+
 const VisitorManagementSystem = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState('home');
   const [loginData, setLoginData] = useState({ user: '', pass: '' });
   const [emailModal, setEmailModal] = useState(null);
+  const [emailSending, setEmailSending] = useState(false);
   
   const [visitors, setVisitors] = useState([]);
   const [events, setEvents] = useState([]);
@@ -203,8 +207,16 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       approval: needsApproval(c),
       verify: ((c.status === 'pending' && !needsApproval(c)) || !!c.renewal) && payState === 'submitted',
       awaiting: (c.status === 'pending' && !needsApproval(c) && !isPaid(c) && c.paymentStatus !== 'submitted') || (!!c.renewal && c.renewal.paymentStatus === 'unpaid'),
-      renewal: !!c.renewal || needsReminder(c)
+      // Stays flagged from 7 days before the end date until the renewal is completed (end date moves) or the member exits
+      renewal: !!c.renewal || (isActive(c) && daysUntil(c.endDate) !== null && daysUntil(c.endDate) <= RENEWAL_WINDOW_DAYS)
     };
+  };
+  // When was this registration made? (createdAt, else the date inside the ID C-DDMMYYYY-SEQ) - used for newest-first ordering
+  const regKey = (c) => {
+    if (c.createdAt) return c.createdAt;
+    const p = (c.id || '').split('-');
+    const d = p[1] || '';
+    return d.length >= 8 ? `${d.slice(4, 8)}-${d.slice(2, 4)}-${d.slice(0, 2)}T00:00:00.${String(p[2] || '0').padStart(6, '0')}` : '';
   };
   const matchesQuick = (c) => {
     if (!quickFilter) return true;
@@ -876,7 +888,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             )}
             {c.status === 'exited' && (c.exitDate || c.exitedOn) && <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><strong>Exit date:</strong> {c.exitDate ? formatDate(c.exitDate) : c.exitedOn}{c.exitNote ? ` — ${c.exitNote}` : ''}</p>}
             {c.reminderSentFor === c.endDate && c.reminderSentOn && <p style={{ color: '#6b7280', margin: '0.25rem 0', fontSize: '0.85rem' }}>📧 Renewal reminder sent {c.reminderSentOn}</p>}
-            {c.gstin && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>GSTIN:</strong> {c.gstin}</p>}
+            <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>GSTIN:</strong> {c.gstin || <span style={{ color: '#9ca3af' }}>Not provided</span>}</p>
             {c.smartCard && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>Smart Card No:</strong> {c.smartCard}</p>}
             {c.address && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>Address:</strong> {c.address}</p>}
             <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {c.purpose}</p>
@@ -951,7 +963,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Mail size={16} style={{ verticalAlign: 'middle' }} /> {b.email} | <Phone size={16} style={{ verticalAlign: 'middle' }} /> {b.fullPhone || b.phone}</p>
             <p style={{ color: '#6b7280', margin: '0.25rem 0' }}><Calendar size={16} style={{ verticalAlign: 'middle' }} /> <span style={{ fontWeight: live ? '700' : '400', color: live ? '#1f2937' : undefined }}>{b.date}</span> | {b.start} - {b.end}
               {chipTxt && <span style={{ marginLeft: '0.75rem', padding: '0.2rem 0.7rem', borderRadius: '10px', fontSize: '0.78rem', fontWeight: '600', ...chipSty }}>{chipTxt}</span>}</p>
-            {b.gstin && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>GSTIN:</strong> {b.gstin}</p>}
+            <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>GSTIN:</strong> {b.gstin || <span style={{ color: '#9ca3af' }}>Not provided</span>}</p>
             {b.smartCard && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>Smart Card No:</strong> {b.smartCard}</p>}
             {b.address && <p style={{ color: '#1f2937', margin: '0.25rem 0' }}><strong>Address:</strong> {b.address}</p>}
             <p style={{ color: '#1f2937', margin: '0.5rem 0' }}><strong>Purpose:</strong> {b.purpose}</p>
@@ -1171,7 +1183,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
                     { t: 'Pending Bookings', v: bookings.filter(b => b.status === 'pending').length, i: Building },
                     { t: 'Coworking Awaiting Approval', v: coworking.filter(needsApproval).length, i: Briefcase },
                     { t: 'Coworking Pending Payment', v: coworking.filter(c => c.status === 'pending' && !needsApproval(c)).length, i: Briefcase },
-                    { t: 'Renewals Due', v: dueReminders.length, i: Briefcase }
+                    { t: 'Renewals Due', v: coworking.filter(c => cowFlags(c).renewal).length, i: Briefcase }
                   ].map(x => (
                     <div key={x.t} style={{ ...card, textAlign: 'center', background: 'linear-gradient(135deg, #2B4C7E 0%, #1e3a5f 100%)', border: '2px solid #F5A623' }}>
                       <x.i size={32} color="#F5A623" />
@@ -2176,9 +2188,12 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       ];
       const list = Object.entries(groups).map(([key, items]) => {
         const counts = PRI.map(p => ({ ...p, n: items.filter(c => cowFlags(c)[p.k]).length })).filter(p => p.n > 0);
-        return { key, name: (items[0].company || '').trim().replace(/\s+/g, ' '), items, counts, top: counts[0] || null,
+        // newest registration among the records that need attention (so the latest request is listed first)
+        const attn = counts.length ? items.filter(c => cowFlags(c)[counts[0].k]) : [];
+        const newest = attn.map(regKey).sort().pop() || '';
+        return { key, name: (items[0].company || '').trim().replace(/\s+/g, ' '), items, counts, top: counts[0] || null, newest,
           rank: counts.length ? PRI.findIndex(p => p.k === counts[0].k) : 99 };
-      }).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+      }).sort((a, b) => a.rank - b.rank || (b.newest > a.newest ? 1 : b.newest < a.newest ? -1 : 0) || a.name.localeCompare(b.name));
       return <>
       <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem' }}>
         <button onClick={() => setGroupOpen(Object.fromEntries(list.map(g => [g.key, true])))} style={{ background: 'none', border: 'none', color: '#2B4C7E', cursor: 'pointer', fontWeight: '600', textDecoration: 'underline' }}>Expand all</button>
@@ -2191,7 +2206,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         const seats = live.reduce((s, c) => s + parseInt(c.seats || 0), 0);
         const active = g.items.filter(c => c.status === 'approved').length;
         const months = {};
-        g.items.forEach(c => { (months[monthKeyOf(c.startDate, c.id)] ||= []).push(c); });
+        [...g.items].sort((a, b) => (regKey(b) > regKey(a) ? 1 : regKey(b) < regKey(a) ? -1 : 0)).forEach(c => { (months[monthKeyOf(c.startDate, c.id)] ||= []).push(c); });
         const accent = g.top ? g.top.c : '#2B4C7E';
         return (
           <div key={g.key} style={{ marginBottom: '1rem', border: `2px solid ${accent}`, borderLeft: `10px solid ${accent}`, borderRadius: '10px', overflow: 'hidden' }}>
@@ -2820,6 +2835,25 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
               </div>
             </div>
 
+            {mailEnabled && (
+              <div style={{ marginBottom: '1rem' }}>
+                <button
+                  disabled={emailSending}
+                  onClick={async () => {
+                    if (emailSending) return;
+                    setEmailSending(true);
+                    const r = await sendAdminEmail(emailModal);
+                    setEmailSending(false);
+                    if (r.ok) { alert(`✅ Email sent to ${emailModal.to} from ${SENDER_EMAIL}`); setEmailModal(null); }
+                    else alert(`Could not send automatically (${r.error}). You can use "Open in Gmail" or copy the text instead.`);
+                  }}
+                  style={{ ...btn, width: '100%', background: 'linear-gradient(135deg, #2B4C7E 0%, #1e3a5f 100%)', opacity: emailSending ? 0.6 : 1 }}
+                >
+                  {emailSending ? 'Sending…' : `✉️ Send now from ${SENDER_EMAIL}`}
+                </button>
+                <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: '#6b7280' }}>Always goes out from {SENDER_EMAIL}, whichever admin is signed in. The StartupTN signature is added automatically.</p>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
               <button 
                 onClick={() => {
@@ -2835,7 +2869,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
               
               <button 
                 onClick={() => {
-                  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(emailModal.to)}&su=${encodeURIComponent(emailModal.subject)}&body=${encodeURIComponent(emailModal.body)}`;
+                  const gmailUrl = `https://mail.google.com/mail/?authuser=${encodeURIComponent(SENDER_EMAIL)}&view=cm&fs=1&to=${encodeURIComponent(emailModal.to)}&su=${encodeURIComponent(emailModal.subject)}&body=${encodeURIComponent(emailModal.body)}`;
                   window.open(gmailUrl, '_blank');
                 }}
                 style={{ ...btn, flex: 1, minWidth: '150px', background: 'linear-gradient(135deg, #0d8c4f 0%, #0a6b3d 100%)' }}

@@ -13,6 +13,8 @@ Create a normal Workspace user, e.g. **spaces@startuptn.in**. Sign in to Google 
 4. Project Settings > Script Properties > add:
    - `MAIL_SECRET` = a long random string you make up (e.g. 30+ characters)
    - `FIREBASE_PROJECT_ID` = your Firebase project ID (same as `VITE_FIREBASE_PROJECT_ID`)
+   - `FIREBASE_API_KEY` = same as `VITE_FIREBASE_API_KEY` (used to check that the sender is a signed-in admin)
+   - `ADMIN_EMAILS` (optional) = comma-separated admin logins allowed to send, e.g. `dhivya@startuptn.in,other@startuptn.in`. Leave out to allow any signed-in admin.
 
 ## 3. Preview the email
 Select `testPreview` in the editor toolbar and click Run. Approve the permission prompt. A sample payment email arrives in this mailbox.
@@ -39,3 +41,5 @@ Until both are set, the app keeps using the manual email dialog.
 - The reminder timer skips members who have a pending renewal, were already reminded, or have exited.
 - Editing the wording: change the text in `Code.gs`, then Deploy > Manage deployments > edit > New version.
 - Daily limit: about 1,500 emails per Workspace account.
+
+- The "Send now from workspace@" button in the app's email dialog (booking approvals, rejections, etc.) uses the same script, so every email goes out from the shared mailbox whichever admin is signed in. After changing `Code.gs`, redeploy: Deploy > Manage deployments > pencil > Version: New version > Deploy.

@@ -27,6 +27,7 @@ function doPost(e) {
     var secret = PropertiesService.getScriptProperties().getProperty('MAIL_SECRET');
     if (!secret || body.secret !== secret) return json_({ ok: false, error: 'unauthorised' });
     if (body.action === 'paymentConfirmation') return json_(paymentConfirmation_(body));
+    if (body.action === 'adminEmail') return json_(adminEmail_(body));
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
@@ -77,6 +78,56 @@ function paymentConfirmation_(body) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ---------------- 1b. any admin email (booking approvals, rejections, etc.) ---------------- */
+
+/**
+ * Sends an email written by an admin in the app, always from this mailbox.
+ * The caller must be signed in to the app: its Firebase ID token is verified with Google before anything is sent.
+ * Optional Script Property ADMIN_EMAILS (comma-separated) limits it to those admin accounts.
+ */
+function adminEmail_(body) {
+  var props = PropertiesService.getScriptProperties();
+  var apiKey = props.getProperty('FIREBASE_API_KEY');
+  if (!apiKey) return { ok: false, error: 'FIREBASE_API_KEY script property is not set' };
+  if (!body.idToken) return { ok: false, error: 'not signed in' };
+
+  var res = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + apiKey, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({ idToken: body.idToken })
+  });
+  if (res.getResponseCode() !== 200) return { ok: false, error: 'sign-in could not be verified' };
+  var user = (JSON.parse(res.getContentText()).users || [])[0];
+  if (!user || !user.email) return { ok: false, error: 'sign-in could not be verified' };
+  var allowed = (props.getProperty('ADMIN_EMAILS') || '').toLowerCase().split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+  if (allowed.length && allowed.indexOf(String(user.email).toLowerCase()) < 0) return { ok: false, error: 'this admin account is not allowed to send' };
+
+  var to = String(body.to || '').trim();
+  if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(to)) return { ok: false, error: 'invalid recipient address' };
+  var subject = String(body.subject || '').slice(0, 250);
+  var text = String(body.body || '');
+  if (!subject || !text || text.length > 10000) return { ok: false, error: 'subject or message is empty or too long' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var dayKey = 'cap:' + Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+    var n = parseInt(props.getProperty(dayKey) || '0', 10);
+    if (n >= 300) return { ok: false, error: 'daily sending limit reached' };
+    sendPlain_(to, subject, text);
+    props.setProperty(dayKey, String(n + 1));
+  } finally { lock.releaseLock(); }
+  return { ok: true, sentBy: user.email };
+}
+
+function sendPlain_(to, subject, text) {
+  // The app's templates already end with "Best regards, StartupTN Team"; the signature block replaces it.
+  var cleaned = text.replace(/\s*(best regards|regards|thanks)[,!]?\s*\n\s*startuptn team\s*$/i, '').replace(/\s+$/, '');
+  var htmlBody = esc_(cleaned).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>').replace(/\n/g, '<br>');
+  var html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937;line-height:1.5;max-width:620px">' +
+    '<div>' + htmlBody + '</div><p style="margin-top:14px">Best regards,</p>' + signatureHtml_() + '</div>';
+  MailApp.sendEmail({ to: to, subject: subject, body: cleaned + '\n\nBest regards,\nStartupTN Team', htmlBody: html, name: SENDER_NAME });
 }
 
 /* ---------------- 2. daily renewal reminders ---------------- */
