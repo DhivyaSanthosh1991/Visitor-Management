@@ -299,3 +299,19 @@ function testPreview() {
     ['Add or confirm your member details using your Coworking ID here: <a href="' + BASE_URL + '">' + BASE_URL + '</a>', 'We will send you a reminder 2 days before your end date, where you can choose to renew or exit.', 'Your invoice will be sent separately.'],
     'Please keep your Coworking ID safe. You need it for member registration and every renewal.');
 }
+
+/** Run from the editor to check the Firestore connection. Read the result under View > Logs (or Execution log). */
+function testFirestore() {
+  var props = PropertiesService.getScriptProperties();
+  var pid = props.getProperty('FIREBASE_PROJECT_ID');
+  console.log('FIREBASE_PROJECT_ID = ' + (pid ? '"' + pid + '"' : 'NOT SET (add it under Project Settings > Script Properties)'));
+  console.log('MAIL_SECRET set: ' + !!props.getProperty('MAIL_SECRET') + ' | FIREBASE_API_KEY set: ' + !!props.getProperty('FIREBASE_API_KEY'));
+  if (!pid) return;
+  try {
+    var rows = queryDocs_('coworking', 'status', 'approved');
+    console.log('OK - read ' + rows.length + ' approved coworking record(s) from Firestore.');
+    if (rows[0]) console.log('First record: ' + rows[0].id + ' (' + rows[0].company + ')');
+  } catch (err) {
+    console.log('FAILED: ' + err);
+  }
+}

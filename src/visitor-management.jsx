@@ -304,6 +304,16 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     loadData();
   }, []);
 
+  // Members tab: always show the latest members and coworking details
+  useEffect(() => {
+    if (tab !== 'admin-cm' || !isAdmin) return;
+    let live = true;
+    Promise.all([getCoworkingMembers(), getCoworking()])
+      .then(([m, c]) => { if (live) { setCoworkingMembers(m); setCoworking(c); } })
+      .catch(err => console.error('Refresh failed:', err));
+    return () => { live = false; };
+  }, [tab, isAdmin]);
+
   // Monitor authentication state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -1572,7 +1582,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date *</label>
           <input 
-            type="date" 
+            type="date" max="2100-12-31" 
             value={bForm.date}
             min={getTodayDate()}
             onChange={(e) => setBForm({...bForm, date: e.target.value})}
@@ -1660,7 +1670,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       <div>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Start Date *</label>
         <input 
-          type="date" 
+          type="date" max="2100-12-31" 
           value={cForm.startDate}
           min={getTodayDate()}
           onChange={(e) => setCForm({...cForm, startDate: e.target.value, endDate: cForm.endDate && cForm.endDate < e.target.value ? '' : cForm.endDate})}
@@ -1671,7 +1681,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       <div>
         <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>End Date *</label>
         <input 
-          type="date" 
+          type="date" max="2100-12-31" 
           value={cForm.endDate}
           min={cForm.startDate || getTodayDate()}
           onChange={(e) => setCForm({...cForm, endDate: e.target.value})}
@@ -1765,11 +1775,11 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
       <label style={{ color: '#6b7280', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>From:</label>
-      <input type="date" value={visitorDateFrom} onChange={(e) => setVisitorDateFrom(e.target.value)} style={{ ...inp, minWidth: '150px' }} />
+      <input type="date" max="2100-12-31" value={visitorDateFrom} onChange={(e) => setVisitorDateFrom(e.target.value)} style={{ ...inp, minWidth: '150px' }} />
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
       <label style={{ color: '#6b7280', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>To:</label>
-      <input type="date" value={visitorDateTo} onChange={(e) => setVisitorDateTo(e.target.value)} style={{ ...inp, minWidth: '150px' }} />
+      <input type="date" max="2100-12-31" value={visitorDateTo} onChange={(e) => setVisitorDateTo(e.target.value)} style={{ ...inp, minWidth: '150px' }} />
     </div>
     {(visitorDateFrom || visitorDateTo) && (
       <button onClick={() => { setVisitorDateFrom(''); setVisitorDateTo(''); }} style={{ ...btn, background: '#e5e7eb', color: '#1f2937', padding: '0.75rem 1rem' }}>Clear</button>
@@ -1894,7 +1904,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <option value="">Event Type *</option>
         {['workshop', 'seminar', 'networking', 'conference', 'meetup'].map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
       </select>
-      <input type="date" value={eForm.date} min={getTodayDate()} onChange={(e) => setEForm({ ...eForm, date: e.target.value })} required style={inp} />
+      <input type="date" max="2100-12-31" value={eForm.date} min={getTodayDate()} onChange={(e) => setEForm({ ...eForm, date: e.target.value })} required style={inp} />
       <input type="time" placeholder="Start Time" value={eForm.start} onChange={(e) => setEForm({ ...eForm, start: e.target.value })} required style={inp} />
       <input type="time" placeholder="End Time" value={eForm.end} onChange={(e) => setEForm({ ...eForm, end: e.target.value })} required style={inp} />
       <input type="text" placeholder="Venue *" value={eForm.venue} onChange={(e) => setEForm({ ...eForm, venue: e.target.value })} required style={inp} />
@@ -2252,7 +2262,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Phone</label>
         <input type="tel" value={editB.fullPhone || editB.phone} onChange={e => setEditB({...editB, fullPhone: e.target.value})} style={inp} /></div>
       <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date</label>
-        <input type="date" value={editB.date} onChange={e => setEditB({...editB, date: e.target.value})} style={inp} /></div>
+        <input type="date" max="2100-12-31" value={editB.date} onChange={e => setEditB({...editB, date: e.target.value})} style={inp} /></div>
       <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Start Time</label>
         <input type="time" value={editB.start} onChange={e => setEditB({...editB, start: e.target.value})} style={inp} /></div>
       <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>End Time</label>
@@ -2277,7 +2287,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <textarea value={editB.req || ''} onChange={e => setEditB({...editB, req: e.target.value})} style={{ ...inp, minHeight: '80px' }} /></div>
     </div>
     <div style={{ display: 'flex', gap: '1rem' }}>
-      <button onClick={async () => { try { await updateBookingFirebase(editB.firebaseId, editB); setBookings(bookings.map(x => x.firebaseId === editB.firebaseId ? editB : x)); setEditB(null); setTab('admin-b'); alert('Booking updated!'); } catch(e) { alert('Error updating booking!'); } }} style={{ ...btn, flex: 1 }}>Save Changes</button>
+      <button onClick={async () => { const bad = (d) => d && !/^(20\d\d|2100)-\d\d-\d\d$/.test(d); if (bad(editB.date)) { alert('Please enter the date with a 4-digit year, e.g. 2026.'); return; } try { await updateBookingFirebase(editB.firebaseId, editB); setBookings(bookings.map(x => x.firebaseId === editB.firebaseId ? editB : x)); setEditB(null); setTab('admin-b'); alert('Booking updated!'); } catch(e) { alert('Error updating booking!'); } }} style={{ ...btn, flex: 1 }}>Save Changes</button>
       <button onClick={() => { setEditB(null); setTab('admin-b'); }} style={{ ...btn, flex: 1, background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>
     </div>
   </div>
@@ -2298,9 +2308,9 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
       <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Seats</label>
         <input type="number" value={editC.seats} onChange={e => setEditC({...editC, seats: e.target.value})} style={inp} /></div>
       <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Start Date</label>
-        <input type="date" value={editC.startDate} onChange={e => setEditC({...editC, startDate: e.target.value})} style={inp} /></div>
+        <input type="date" max="2100-12-31" value={editC.startDate} onChange={e => setEditC({...editC, startDate: e.target.value})} style={inp} /></div>
       <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>End Date</label>
-        <input type="date" value={editC.endDate || ''} min={editC.startDate} onChange={e => setEditC({...editC, endDate: e.target.value})} style={inp} /></div>
+        <input type="date" max="2100-12-31" value={editC.endDate || ''} min={editC.startDate} onChange={e => setEditC({...editC, endDate: e.target.value})} style={inp} /></div>
       <div><label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Status</label>
         <select value={editC.status} onChange={e => setEditC({...editC, status: e.target.value})} style={inp}>
           <option value="pending">Awaiting approval / payment</option>
@@ -2318,7 +2328,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
         <textarea value={editC.purpose} onChange={e => setEditC({...editC, purpose: e.target.value})} style={{ ...inp, minHeight: '80px' }} /></div>
     </div>
     <div style={{ display: 'flex', gap: '1rem' }}>
-      <button onClick={async () => { try { await updateCoworkingFirebase(editC.firebaseId, editC); setCoworking(coworking.map(x => x.firebaseId === editC.firebaseId ? editC : x)); setEditC(null); setTab('admin-c'); alert('Coworking request updated!'); } catch(e) { alert('Error updating!'); } }} style={{ ...btn, flex: 1 }}>Save Changes</button>
+      <button onClick={async () => { const bad = (d) => d && !/^(20\d\d|2100)-\d\d-\d\d$/.test(d); if (bad(editC.startDate) || bad(editC.endDate)) { alert('Please enter the dates with a 4-digit year, e.g. 2026.'); return; } if (editC.endDate && editC.startDate && editC.endDate < editC.startDate) { alert('End date cannot be before the start date.'); return; } try { await updateCoworkingFirebase(editC.firebaseId, editC); setCoworking(coworking.map(x => x.firebaseId === editC.firebaseId ? editC : x)); setEditC(null); setTab('admin-c'); alert('Coworking request updated!'); } catch(e) { alert('Error updating!'); } }} style={{ ...btn, flex: 1 }}>Save Changes</button>
       <button onClick={() => { setEditC(null); setTab('admin-c'); }} style={{ ...btn, flex: 1, background: '#e5e7eb', color: '#1f2937' }}>Cancel</button>
     </div>
   </div>
@@ -2811,7 +2821,7 @@ const [coworkingStatusFilter, setCoworkingStatusFilter] = useState('all');
             <h2 style={{ color: '#2B4C7E', fontWeight: '700', marginTop: 0 }}>Mark as Exited</h2>
             <p style={{ color: '#6b7280', marginTop: 0 }}><strong>{exitModal.c.company}</strong> ({exitModal.c.id})</p>
             <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Date of exit *</label>
-            <input type="date" value={exitModal.date} min={exitModal.c.startDate || undefined} onChange={(e) => setExitModal({ ...exitModal, date: e.target.value })} style={{ ...inp, marginBottom: '1rem' }} />
+            <input type="date" max="2100-12-31" value={exitModal.date} min={exitModal.c.startDate || undefined} onChange={(e) => setExitModal({ ...exitModal, date: e.target.value })} style={{ ...inp, marginBottom: '1rem' }} />
             <label style={{ display: 'block', marginBottom: '0.5rem', color: '#2B4C7E', fontWeight: '600' }}>Note (optional)</label>
             <textarea value={exitModal.note} onChange={(e) => setExitModal({ ...exitModal, note: e.target.value })} style={{ ...inp, minHeight: '70px', marginBottom: '1.5rem' }} />
             <div style={{ display: 'flex', gap: '1rem' }}>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Download, Search, Trash2 } from 'lucide-react';
 import { deleteCoworkingMember } from './firebaseUtils';
-import { companyKey, monthKeyOf, monthLabel, formatDate, statusMeta } from './coworkUtils';
+import { companyKey, monthKeyOf, monthLabel, formatDate, statusMeta, needsApproval } from './coworkUtils';
 
 const cols = ['#', 'Booking ID', 'Name', 'Designation', 'Contact', 'Alt Contact', 'Email', 'Gender', 'Aadhar', 'DOB', 'Marital', 'Blood', "Father's Name", 'Permanent Addr', 'Comm Addr', 'Office Addr', 'Del'];
 const td = { padding: '0.5rem 0.75rem', color: '#6b7280' };
@@ -16,6 +16,7 @@ const CoworkMembersAdmin = ({ coworking, members, setMembers, styles, exportToEx
   const { card, btn, inp } = styles;
   const [open, setOpen] = useState(null);
   const [search, setSearch] = useState('');
+  const [stateFilter, setStateFilter] = useState('');
 
   const bookings = [...coworking].filter((c) => c.company).sort((a, b) => idNum(b.id) - idNum(a.id));
   const groups = {};
@@ -24,10 +25,14 @@ const CoworkMembersAdmin = ({ coworking, members, setMembers, styles, exportToEx
   const list = Object.entries(groups).map(([key, bs]) => {
     // display name: the spelling used by the most recent booking
     const name = bs[0].company.trim().replace(/\s+/g, ' ');
-    const live = bs.filter((b) => b.status !== 'rejected' && b.status !== 'exited');
+    // approved bookings that are still running (not rejected, exited or waiting for approval)
+    const live = bs.filter((b) => b.status !== 'rejected' && b.status !== 'exited' && !needsApproval(b));
+    const unapproved = bs.filter(needsApproval);
+    const state = live.length ? 'active' : unapproved.length ? 'unapproved' : bs.every((b) => b.status === 'rejected') ? 'rejected' : 'closed';
     const ids = new Set(bs.map((b) => b.id));
     const team = members.filter((m) => !m.removed && ids.has(m.bookingId));
     const seats = live.reduce((s, b) => s + parseInt(b.seats || 0), 0);
+    const requestedSeats = unapproved.reduce((s, b) => s + parseInt(b.seats || 0), 0);
     const liveIds = new Set(live.map((b) => b.id));
     const liveTeam = team.filter((m) => liveIds.has(m.bookingId)).length;
 
@@ -42,10 +47,28 @@ const CoworkMembersAdmin = ({ coworking, members, setMembers, styles, exportToEx
     const months = {};
     entries.forEach((e) => { (months[e.key] ||= []).push(e); });
     const monthList = Object.keys(months).sort().reverse().map((k) => ({ key: k, entries: months[k].sort((a, b) => idNum(b.b.id) - idNum(a.b.id) || b.cycle - a.cycle) }));
-    return { key, name, bs, team, seats, liveTeam, monthList };
+    return { key, name, bs, team, seats, requestedSeats, unapproved, state, liveTeam, monthList };
   }).sort((a, b) => a.name.localeCompare(b.name));
 
-  const shown = list.filter((g) => !search || g.name.toLowerCase().includes(search.toLowerCase()) || g.bs.some((b) => (b.id || '').toLowerCase().includes(search.toLowerCase())));
+  // Totals follow the current coworking details: only members of approved, running bookings are counted
+  const activeCompanies = list.filter((g) => g.state === 'active').length;
+  const activeMemberTotal = list.reduce((n, g) => n + g.liveTeam, 0);
+  const awaitingCompanies = list.filter((g) => g.state === 'unapproved').length;
+  const closedCompanies = list.filter((g) => g.state === 'closed' || g.state === 'rejected').length;
+  const FILTERS = [
+    { k: '', l: 'All', n: list.length, c: '#2B4C7E', bg: '#EFF6FF' },
+    { k: 'active', l: 'Active', n: activeCompanies, c: '#059669', bg: '#D1FAE5' },
+    { k: 'unapproved', l: 'Awaiting approval', n: awaitingCompanies, c: '#0f766e', bg: '#CCFBF1' },
+    { k: 'closed', l: 'Exited / Rejected', n: closedCompanies, c: '#6b7280', bg: '#E5E7EB' }
+  ];
+  const matchesState = (g) => !stateFilter || (stateFilter === 'closed' ? (g.state === 'closed' || g.state === 'rejected') : g.state === stateFilter);
+  const TONE = {
+    active: { border: '#93c5fd', head: '#EFF6FF', accent: '#2B4C7E' },
+    unapproved: { border: '#5eead4', head: '#F0FDFA', accent: '#0f766e' },
+    closed: { border: '#d1d5db', head: '#F3F4F6', accent: '#9ca3af' },
+    rejected: { border: '#d1d5db', head: '#F3F4F6', accent: '#9ca3af' }
+  };
+  const shown = list.filter((g) => matchesState(g) && (!search || g.name.toLowerCase().includes(search.toLowerCase()) || g.bs.some((b) => (b.id || '').toLowerCase().includes(search.toLowerCase()))));
 
   const memberTable = (rows) => (
     <div style={{ overflowX: 'auto', marginTop: '0.5rem' }}>
@@ -74,7 +97,10 @@ const CoworkMembersAdmin = ({ coworking, members, setMembers, styles, exportToEx
   return (
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Coworking Members ({members.filter((m) => !m.removed).length}) — {list.length} companies</h2>
+        <div>
+          <h2 style={{ color: '#2B4C7E', fontWeight: '700', margin: 0 }}>Coworking Members ({activeMemberTotal}) — {activeCompanies} active compan{activeCompanies === 1 ? 'y' : 'ies'}</h2>
+          <p style={{ margin: '0.35rem 0 0', color: '#6b7280', fontSize: '0.8rem' }}>Counts follow the current coworking details: members of exited, rejected or not-yet-approved bookings are not included.</p>
+        </div>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           <div style={{ position: 'relative' }}>
             <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
@@ -84,21 +110,34 @@ const CoworkMembersAdmin = ({ coworking, members, setMembers, styles, exportToEx
         </div>
       </div>
 
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+        {FILTERS.map((f) => (
+          <button key={f.k} onClick={() => setStateFilter(stateFilter === f.k ? '' : f.k)}
+            style={{ padding: '0.35rem 0.9rem', borderRadius: '999px', border: `1px solid ${f.c}55`, background: f.bg, color: f.c, fontWeight: stateFilter === f.k ? '700' : '500', cursor: 'pointer', outline: stateFilter === f.k ? `2px solid ${f.c}` : 'none', fontSize: '0.85rem' }}>
+            {f.l} ({f.n})
+          </button>
+        ))}
+      </div>
+
       {shown.length === 0 && <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No coworking bookings found.</p>}
 
       {shown.map((g) => {
         const isOpen = open === g.key;
         const full = g.seats > 0 && g.liveTeam >= g.seats;
+        const tone = TONE[g.state];
         return (
-          <div key={g.key} style={{ marginBottom: '1rem', border: '2px solid #2B4C7E', borderRadius: '10px', overflow: 'hidden' }}>
-            <div onClick={() => setOpen(isOpen ? null : g.key)} style={{ background: isOpen ? '#2B4C7E' : '#EFF6FF', padding: '1rem 1.5rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div key={g.key} style={{ marginBottom: '1rem', border: `2px solid ${tone.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+            <div onClick={() => setOpen(isOpen ? null : g.key)} style={{ background: tone.head, borderLeft: `6px solid ${tone.accent}`, borderBottom: isOpen ? `3px solid ${tone.accent}` : 'none', padding: '1rem 1.5rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '1.1rem', fontWeight: '700', color: isOpen ? '#fff' : '#2B4C7E' }}>{g.name}</span>
-                <span style={{ fontSize: '0.85rem', color: isOpen ? '#F5A623' : '#6b7280' }}>{g.bs.length} booking(s) | {g.monthList.length} month(s) | {g.seats} seats</span>
+                <span style={{ fontSize: '1.1rem', fontWeight: '700', color: g.state === 'active' ? '#2B4C7E' : tone.accent === '#9ca3af' ? '#4b5563' : tone.accent }}>{g.name}</span>
+                <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>{g.bs.length} booking(s) | {g.monthList.length} month(s) | {g.state === 'unapproved' ? `${g.requestedSeats} seats requested` : `${g.seats} seats`}</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: '600', background: full ? 'rgba(5,150,105,0.15)' : 'rgba(245,166,35,0.15)', color: full ? '#059669' : '#F5A623' }}>Members: {g.liveTeam} / {g.seats}</span>
-                <span style={{ color: isOpen ? '#fff' : '#2B4C7E', fontSize: '1.2rem', fontWeight: '700' }}>{isOpen ? '▲' : '▼'}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {g.state === 'active' && <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: '600', background: full ? 'rgba(5,150,105,0.15)' : 'rgba(245,166,35,0.15)', color: full ? '#059669' : '#b45309' }}>Members: {g.liveTeam} / {g.seats}</span>}
+                {g.unapproved.length > 0 && <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: '600', background: 'rgba(15,118,110,0.12)', color: '#0f766e' }}>📝 {g.state === 'unapproved' ? 'Awaiting approval' : `${g.unapproved.length} awaiting approval`}</span>}
+                {g.state === 'closed' && <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: '600', background: 'rgba(107,114,128,0.12)', color: '#6b7280' }}>Exited</span>}
+                {g.state === 'rejected' && <span style={{ padding: '0.25rem 0.75rem', borderRadius: '12px', fontSize: '0.85rem', fontWeight: '600', background: 'rgba(220,38,38,0.1)', color: '#b91c1c' }}>Rejected</span>}
+                <span style={{ color: tone.accent, fontSize: '1.2rem', fontWeight: '700' }}>{isOpen ? '▲' : '▼'}</span>
               </div>
             </div>
 
@@ -116,7 +155,7 @@ const CoworkMembersAdmin = ({ coworking, members, setMembers, styles, exportToEx
                         const meta = statusMeta(e.b);
                         const team = e.kind === 'current' ? members.filter((m) => !m.removed && m.bookingId === e.b.id) : [];
                         return (
-                          <div key={e.b.id + '-' + e.cycle + '-' + idx} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '0.75rem', opacity: e.kind === 'past' ? 0.85 : 1 }}>
+                          <div key={e.b.id + '-' + e.cycle + '-' + idx} style={{ background: e.kind === 'current' && needsApproval(e.b) ? '#F0FDFA' : e.kind === 'current' && (e.b.status === 'exited' || e.b.status === 'rejected') ? '#F3F4F6' : '#f9fafb', border: `1px solid ${e.kind === 'current' && needsApproval(e.b) ? '#99f6e4' : '#e5e7eb'}`, borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '0.75rem', opacity: e.kind === 'past' ? 0.85 : 1 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
                               <div>
                                 <strong style={{ color: '#2B4C7E' }}>{e.b.id}</strong>

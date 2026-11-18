@@ -337,7 +337,7 @@ const CoworkPortal = ({ coworking, setCoworking, members, setMembers, styles, in
           <div><label style={label}>Aadhar Number *</label>
             <input type="text" value={memberForm.aadharNo} onChange={e => setMemberForm({ ...memberForm, aadharNo: e.target.value.replace(/\D/g, '') })} maxLength="12" required style={inp} placeholder="12-digit" /></div>
           <div><label style={label}>Date of Birth *</label>
-            <input type="date" value={memberForm.dob} onChange={e => setMemberForm({ ...memberForm, dob: e.target.value })} required style={inp} /></div>
+            <input type="date" max="2100-12-31" value={memberForm.dob} onChange={e => setMemberForm({ ...memberForm, dob: e.target.value })} required style={inp} /></div>
           <div><label style={label}>Marital Status</label>
             <select value={memberForm.maritalStatus} onChange={e => setMemberForm({ ...memberForm, maritalStatus: e.target.value })} style={inp}>
               <option value="">Select</option>{['Single', 'Married', 'Divorced', 'Widowed'].map(s => <option key={s} value={s}>{s}</option>)}</select></div>
@@ -372,9 +372,9 @@ const CoworkPortal = ({ coworking, setCoworking, members, setMembers, styles, in
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
                 <div><label style={label}>New Start Date *</label>
-                  <input type="date" min={addDays(rec.endDate, 1)} value={renewForm.startDate} onChange={e => setRenewForm({ ...renewForm, startDate: e.target.value })} required style={inp} /></div>
+                  <input type="date" max="2100-12-31" min={addDays(rec.endDate, 1)} value={renewForm.startDate} onChange={e => setRenewForm({ ...renewForm, startDate: e.target.value })} required style={inp} /></div>
                 <div><label style={label}>New End Date *</label>
-                  <input type="date" min={renewForm.startDate} value={renewForm.endDate} onChange={e => setRenewForm({ ...renewForm, endDate: e.target.value })} required style={inp} /></div>
+                  <input type="date" max="2100-12-31" min={renewForm.startDate} value={renewForm.endDate} onChange={e => setRenewForm({ ...renewForm, endDate: e.target.value })} required style={inp} /></div>
                 <div><label style={label}>Additional members joining *</label>
                   <input type="number" min="0" value={renewForm.addCount} onChange={e => setRenewForm({ ...renewForm, addCount: e.target.value })} required style={inp} /></div>
                 {seatsFree(rec, members) > 0 && (
